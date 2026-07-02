@@ -1,0 +1,365 @@
+Build Category (làm quen pattern) + Course
+
+
+Làm Category trước — đơn giản nhất, để bạn nắm pattern. Sau đó Course sẽ rõ hơn nhiều.
+
+Category — đầy đủ 5 layer
+js// src/validations/categoryValidation.js
+import { z } from "zod";
+
+export const createCategorySchema = z.object({
+  name: z.string().min(2, "Tên quá ngắn").max(50, "Tên quá dài").trim(),
+  description: z.string().max(200).optional(),
+});
+
+export const updateCategorySchema = z.object({
+  name: z.string().min(2).max(50).trim().optional(),
+  description: z.string().max(200).optional(),
+});
+js// src/services/categoryService.js
+import Category from "../models/Category.js";
+import createError from "../middlewares/createError.js";
+import slugify from "slugify"; // npm install slugify
+
+export async function createCategory(name, description = "") {
+  const slug = slugify(name, { lower: true, strict: true });
+
+  const exists = await Category.findOne({ $or: [{ name }, { slug }] });
+  if (exists) throw createError(400, "Category already exists");
+
+  return await Category.create({ name, slug, description });
+}
+
+export async function getAllCategories() {
+  return await Category.find().sort({ createdAt: -1 });
+}
+
+export async function getCategoryById(id) {
+  const category = await Category.findById(id);
+  if (!category) throw createError(404, "Category not found");
+  return category;
+}
+
+export async function updateCategory(id, data) {
+  const category = await Category.findById(id);
+  if (!category) throw createError(404, "Category not found");
+
+  // nếu đổi name thì cập nhật slug luôn
+  if (data.name) {
+    data.slug = slugify(data.name, { lower: true, strict: true });
+  }
+
+  Object.assign(category, data);
+  return await category.save();
+}
+
+export async function deleteCategory(id) {
+  const category = await Category.findByIdAndDelete(id);
+  if (!category) throw createError(404, "Category not found");
+  return category;
+}
+js// src/controllers/categoryController.js
+import * as categoryService from "../services/categoryService.js";
+
+export async function create(req, res) {
+  const { name, description } = req.body;
+  const category = await categoryService.createCategory(name, description);
+  res.status(201).json(category);
+}
+
+export async function getAll(req, res) {
+  const categories = await categoryService.getAllCategories();
+  res.json(categories);
+}
+
+export async function getById(req, res) {
+  const category = await categoryService.getCategoryById(req.params.id);
+  res.json(category);
+}
+
+export async function update(req, res) {
+  const category = await categoryService.updateCategory(req.params.id, req.body);
+  res.json(category);
+}
+
+export async function remove(req, res) {
+  await categoryService.deleteCategory(req.params.id);
+  res.json({ message: "Category deleted" });
+}
+js// src/routes/categoryRoutes.js
+import express from "express";
+import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+import validate from "../middlewares/validate.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
+import * as categoryController from "../controllers/categoryController.js";
+import {
+  createCategorySchema,
+  updateCategorySchema,
+} from "../validations/categoryValidation.js";
+
+const router = express.Router();
+
+// public
+router.get("/",     asyncHandler(categoryController.getAll));
+router.get("/:id",  asyncHandler(categoryController.getById));
+
+// admin only
+router.post(
+  "/",
+  auth, role("admin"),
+  validate(createCategorySchema),
+  asyncHandler(categoryController.create)
+);
+
+router.put(
+  "/:id",
+  auth, role("admin"),
+  validate(updateCategorySchema),
+  asyncHandler(categoryController.update)
+);
+
+router.delete(
+  "/:id",
+  auth, role("admin"),
+  asyncHandler(categoryController.remove)
+);
+
+export default router;
+Test Postman cho Category xong xuôi, sau đó sang Course.
+
+Course — 5 layer + ownership check
+js// src/validations/courseValidation.js
+import { z } from "zod";
+
+export const createCourseSchema = z.object({
+  title: z.string().min(3, "Tiêu đề quá ngắn").max(100),
+  description: z.string().min(10, "Mô tả quá ngắn"),
+  category: z.string().length(24, "Category ID không hợp lệ"),
+  price: z.number().min(0).default(0),
+});
+
+export const updateCourseSchema = z.object({
+  title: z.string().min(3).max(100).optional(),
+  description: z.string().min(10).optional(),
+  category: z.string().length(24).optional(),
+  price: z.number().min(0).optional(),
+  isPublished: z.boolean().optional(),
+});
+js// src/services/courseService.js
+import Course from "../models/Course.js";
+import Category from "../models/Category.js";
+import createError from "../middlewares/createError.js";
+
+export async function createCourse(teacherId, data) {
+  // kiểm tra category tồn tại trước khi tạo
+  const category = await Category.findById(data.category);
+  if (!category) throw createError(404, "Category not found");
+
+  return await Course.create({
+    ...data,
+    teacher: teacherId, // server tự gán — không nhận từ client
+    isPublished: false,
+  });
+}
+
+export async function getAllCourses(query = {}) {
+  const { category, search, page = 1, limit = 10 } = query;
+
+  const filter = { isPublished: true }; // student chỉ thấy course đã publish
+
+  if (category) filter.category = category;
+
+  if (search) {
+    filter.title = { $regex: search, $options: "i" }; // tìm kiếm không phân biệt hoa thường
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [courses, total] = await Promise.all([
+    Course.find(filter)
+      .populate("teacher", "username avatar")      // chỉ lấy field cần
+      .populate("category", "name slug")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit)),
+    Course.countDocuments(filter),
+  ]);
+
+  return {
+    courses,
+    pagination: {
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
+export async function getCourseById(id) {
+  const course = await Course.findById(id)
+    .populate("teacher", "username avatar")
+    .populate("category", "name slug");
+
+  if (!course) throw createError(404, "Course not found");
+  return course;
+}
+
+export async function updateCourse(courseId, userId, userRole, data) {
+  const course = await Course.findById(courseId);
+  if (!course) throw createError(404, "Course not found");
+
+  // ⭐ Ownership check — quan trọng nhất
+  // admin sửa được tất cả, teacher chỉ sửa course của mình
+  const isOwner = course.teacher.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isOwner && !isAdmin) {
+    throw createError(403, "Bạn không có quyền sửa course này");
+  }
+
+  Object.assign(course, data);
+  return await course.save();
+}
+
+export async function deleteCourse(courseId, userId, userRole) {
+  const course = await Course.findById(courseId);
+  if (!course) throw createError(404, "Course not found");
+
+  const isOwner = course.teacher.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isOwner && !isAdmin) {
+    throw createError(403, "Bạn không có quyền xóa course này");
+  }
+
+  await Course.findByIdAndDelete(courseId);
+}
+
+// teacher xem tất cả course của mình (kể cả draft)
+export async function getMyCourses(teacherId) {
+  return await Course.find({ teacher: teacherId })
+    .populate("category", "name slug")
+    .sort({ createdAt: -1 });
+}
+js// src/controllers/courseController.js
+import * as courseService from "../services/courseService.js";
+
+export async function create(req, res) {
+  const course = await courseService.createCourse(req.user.id, req.body);
+  res.status(201).json(course);
+}
+
+export async function getAll(req, res) {
+  const result = await courseService.getAllCourses(req.query);
+  res.json(result);
+}
+
+export async function getById(req, res) {
+  const course = await courseService.getCourseById(req.params.id);
+  res.json(course);
+}
+
+export async function update(req, res) {
+  const course = await courseService.updateCourse(
+    req.params.id,
+    req.user.id,
+    req.user.role,
+    req.body
+  );
+  res.json(course);
+}
+
+export async function remove(req, res) {
+  await courseService.deleteCourse(
+    req.params.id,
+    req.user.id,
+    req.user.role
+  );
+  res.json({ message: "Course deleted" });
+}
+
+export async function getMyCourses(req, res) {
+  const courses = await courseService.getMyCourses(req.user.id);
+  res.json(courses);
+}
+js// src/routes/courseRoutes.js
+import express from "express";
+import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+import validate from "../middlewares/validate.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
+import * as courseController from "../controllers/courseController.js";
+import {
+  createCourseSchema,
+  updateCourseSchema,
+} from "../validations/courseValidation.js";
+
+const router = express.Router();
+
+// public — ai cũng xem được
+router.get("/",     asyncHandler(courseController.getAll));
+router.get("/:id",  asyncHandler(courseController.getById));
+
+// teacher xem course của mình
+router.get(
+  "/my/courses",
+  auth, role("teacher", "admin"),
+  asyncHandler(courseController.getMyCourses)
+);
+
+// teacher + admin tạo course
+router.post(
+  "/",
+  auth, role("teacher", "admin"),
+  validate(createCourseSchema),
+  asyncHandler(courseController.create)
+);
+
+// sửa + xóa: ownership check nằm trong service
+router.put(
+  "/:id",
+  auth, role("teacher", "admin"),
+  validate(updateCourseSchema),
+  asyncHandler(courseController.update)
+);
+
+router.delete(
+  "/:id",
+  auth, role("teacher", "admin"),
+  asyncHandler(courseController.remove)
+);
+
+export default router;
+
+Đăng ký route trong app.js
+js// app.js — thêm 2 route mới
+import categoryRoutes from "./src/routes/categoryRoutes.js";
+import courseRoutes from "./src/routes/courseRoutes.js";
+
+app.use("/api/categories", categoryRoutes);
+app.use("/api/courses", courseRoutes);
+
+Test Postman theo thứ tự này
+1. POST /api/auth/login (lấy accessToken)
+
+2. POST /api/categories          → cần admin token
+   { "name": "JavaScript", "description": "JS courses" }
+
+3. GET  /api/categories          → public, không cần token
+
+4. POST /api/courses             → cần teacher token
+   {
+     "title": "Node.js từ zero",
+     "description": "Học Node.js từ căn bản đến nâng cao",
+     "category": "<id vừa tạo>",
+     "price": 0
+   }
+
+5. GET  /api/courses             → public, có pagination
+   GET  /api/courses?category=<id>&search=node&page=1&limit=5
+
+6. PUT  /api/courses/:id         → thử bằng token của teacher khác → phải nhận 403
+
+Điều quan trọng nhất trong ngày 2 là hiểu tại sao ownership check nằm trong service chứ không phải middleware hay controller: vì chỉ ở service mới query được DB để biết course đó thuộc về ai. Middleware chỉ biết role, không biết ownership.

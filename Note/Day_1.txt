@@ -1,0 +1,158 @@
+ Vẽ data model + copy Auth system sang + chạy thử
+
+
+User (1) ──< Course (nhiều)        — 1 teacher có nhiều course
+Course (1) ──< Lesson (nhiều)      — 1 course có nhiều lesson
+Course (n) ──< Category (1)        — nhiều course thuộc 1 category
+Lesson (1) ──< Comment (nhiều)     — 1 lesson có nhiều comment
+Comment (n) ──> User (1)           — comment thuộc về 1 user
+
+
+Trước khi viết schema, xác định rõ quan hệ giữa các entity — đây là bước senior luôn làm trước khi mở editor:
+User (teacher) ──1:n──> Course
+Category       ──1:n──> Course
+Course         ──1:n──> Lesson
+Lesson         ──1:n──> Comment
+User           ──1:n──> Comment
+User           ──n:n──> Course   (student enroll — optional, tùy bạn có làm enrollment không)
+
+1. User (đã có sẵn — chỉ thêm field role 3 cấp)
+js// models/Auth.js
+import mongoose from "mongoose";
+
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, minlength: 3, maxlength: 20 },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+
+  role: {
+    type: String,
+    enum: ["admin", "teacher", "student"],
+    default: "student",
+  },
+
+  isVerified: { type: Boolean, default: false },
+  verifyToken: String,
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+  refreshToken: { type: String, default: null }, // lưu DB thay vì RAM (theo audit trước)
+
+  avatar: { type: String, default: null },
+}, { timestamps: true });
+
+export default mongoose.model("Auth", userSchema);
+
+2. Category
+js// models/Category.js
+import mongoose from "mongoose";
+
+const categorySchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true, trim: true },
+  slug: { type: String, required: true, unique: true, lowercase: true },
+  description: { type: String, default: "" },
+}, { timestamps: true });
+
+export default mongoose.model("Category", categorySchema);
+slug dùng cho URL đẹp sau này (/courses?category=javascript-basics). Tạo tự động từ name trong service, không nhận từ client.
+
+3. Course
+js// models/Course.js
+import mongoose from "mongoose";
+
+const courseSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true, minlength: 3 },
+  description: { type: String, required: true },
+
+  teacher: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Auth",
+    required: true,
+  },
+
+  category: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
+    required: true,
+  },
+
+  thumbnail: { type: String, default: null },
+  price: { type: Number, default: 0, min: 0 },
+
+  isPublished: { type: Boolean, default: false }, // teacher có thể tạo draft trước
+}, { timestamps: true });
+
+export default mongoose.model("Course", courseSchema);
+isPublished là pattern thực tế hay gặp — teacher tạo course xong nhưng chưa public ngay, student chỉ thấy course đã publish.
+
+4. Lesson
+js// models/Lesson.js
+import mongoose from "mongoose";
+
+const lessonSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  content: { type: String, default: "" },
+  videoUrl: { type: String, default: null },
+
+  course: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Course",
+    required: true,
+  },
+
+  order: { type: Number, default: 0 }, // thứ tự bài học trong course
+}, { timestamps: true });
+
+export default mongoose.model("Lesson", lessonSchema);
+order quan trọng — course có nhiều lesson cần hiển thị đúng thứ tự (Lesson 1, 2, 3...), không phải theo createdAt.
+
+5. Comment
+js// models/Comment.js
+import mongoose from "mongoose";
+
+const commentSchema = new mongoose.Schema({
+  content: { type: String, required: true, trim: true },
+
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Auth",
+    required: true,
+  },
+
+  lesson: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Lesson",
+    required: true,
+  },
+
+  parentComment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Comment",
+    default: null, // hỗ trợ reply comment, null = comment gốc
+  },
+}, { timestamps: true });
+
+export default mongoose.model("Comment", commentSchema);
+parentComment cho phép reply — nếu chưa cần thiết thì bỏ field này đi, đừng over-engineer ngay từ đầu. Thêm sau khi cần cũng không khó.
+
+Một quyết định kiến trúc cần bạn tự cân nhắc: populate hay không?
+Khi gọi GET /courses/:id, bạn có 2 lựa chọn:
+js// Cách 1 — chỉ trả ObjectId, client tự gọi thêm API lấy tên teacher
+const course = await Course.findById(id);
+
+// Cách 2 — populate luôn, trả về tên teacher, category đầy đủ
+const course = await Course.findById(id)
+  .populate("teacher", "username email")  // chỉ lấy field cần, không lấy password
+  .populate("category", "name slug");
+Senior sẽ chọn cách 2 — giảm số lần gọi API từ phía client (tránh N+1 query problem). Nhưng phải chỉ định rõ field nào cần populate ("username email"), tuyệt đối không populate cả object User vì sẽ lộ password hash dù đã bị che, và tốn băng thông không cần thiết.
+
+Index cần thêm để tăng performance (thường bị junior bỏ qua)
+js// Course.js
+courseSchema.index({ category: 1 });
+courseSchema.index({ teacher: 1 });
+
+// Lesson.js
+lessonSchema.index({ course: 1, order: 1 }); // query lesson theo course, sort theo order
+
+// Comment.js
+commentSchema.index({ lesson: 1, createdAt: -1 }); // lấy comment mới nhất trước
+Index giúp MongoDB tìm nhanh hơn khi data lớn. Không cần thiết khi data ít (test local), nhưng đây là điểm cộng nếu phỏng vấn hỏi "bạn có tối ưu query không?"

@@ -1,0 +1,353 @@
+Build Lesson + Comment
+
+Ngày 3 tiếp tục từ chỗ mình đã giải thích — bây giờ viết đầy đủ code từng file theo đúng 5 layer.
+
+File 1 — Validation
+js// src/validations/lessonValidation.js
+import { z } from "zod";
+
+export const createLessonSchema = z.object({
+  title:    z.string().min(3, "Tiêu đề quá ngắn").max(100),
+  content:  z.string().optional(),
+  videoUrl: z.string().url("URL không hợp lệ").optional(),
+  order:    z.number().int().min(0).default(0),
+});
+
+export const updateLessonSchema = z.object({
+  title:    z.string().min(3).max(100).optional(),
+  content:  z.string().optional(),
+  videoUrl: z.string().url().nullable().optional(),
+  order:    z.number().int().min(0).optional(),
+});
+js// src/validations/commentValidation.js
+import { z } from "zod";
+
+export const createCommentSchema = z.object({
+  content: z.string()
+    .min(1, "Comment không được rỗng")
+    .max(500, "Comment quá dài"),
+});
+
+export const updateCommentSchema = z.object({
+  content: z.string().min(1).max(500),
+});
+
+File 2 — Service
+js// src/services/lessonService.js
+import Lesson from "../models/Lesson.js";
+import Course from "../models/Course.js";
+import createError from "../middlewares/createError.js";
+
+// ⭐ Helper dùng lại cho mọi thao tác write
+async function checkCourseOwnership(courseId, userId, userRole) {
+  const course = await Course.findById(courseId);
+  if (!course) throw createError(404, "Course not found");
+
+  const isOwner = course.teacher.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isOwner && !isAdmin) {
+    throw createError(403, "Bạn không có quyền thao tác lesson này");
+  }
+
+  return course;
+}
+
+export async function getLessonsByCourse(courseId) {
+  // kiểm tra course tồn tại
+  const course = await Course.findById(courseId);
+  if (!course) throw createError(404, "Course not found");
+
+  return await Lesson.find({ course: courseId })
+    .sort({ order: 1 }); // ⭐ sắp xếp theo thứ tự bài học
+}
+
+export async function getLessonById(courseId, lessonId) {
+  const lesson = await Lesson.findOne({
+    _id: lessonId,
+    course: courseId, // ⭐ đảm bảo lesson thuộc đúng course
+  });
+
+  if (!lesson) throw createError(404, "Lesson not found");
+  return lesson;
+}
+
+export async function createLesson(courseId, userId, userRole, data) {
+  await checkCourseOwnership(courseId, userId, userRole);
+
+  return await Lesson.create({
+    ...data,
+    course: courseId, // server tự gán — không nhận từ client
+  });
+}
+
+export async function updateLesson(courseId, lessonId, userId, userRole, data) {
+  await checkCourseOwnership(courseId, userId, userRole);
+
+  const lesson = await Lesson.findOneAndUpdate(
+    { _id: lessonId, course: courseId },
+    data,
+    { new: true } // trả về document sau khi update
+  );
+
+  if (!lesson) throw createError(404, "Lesson not found");
+  return lesson;
+}
+
+export async function deleteLesson(courseId, lessonId, userId, userRole) {
+  await checkCourseOwnership(courseId, userId, userRole);
+
+  const lesson = await Lesson.findOneAndDelete({
+    _id: lessonId,
+    course: courseId,
+  });
+
+  if (!lesson) throw createError(404, "Lesson not found");
+}
+js// src/services/commentService.js
+import Comment from "../models/Comment.js";
+import Lesson from "../models/Lesson.js";
+import createError from "../middlewares/createError.js";
+
+export async function getCommentsByLesson(lessonId) {
+  const lesson = await Lesson.findById(lessonId);
+  if (!lesson) throw createError(404, "Lesson not found");
+
+  return await Comment.find({ lesson: lessonId })
+    .populate("user", "username avatar") // hiển thị tên người bình luận
+    .sort({ createdAt: -1 });            // mới nhất trước
+}
+
+export async function createComment(lessonId, userId, content) {
+  const lesson = await Lesson.findById(lessonId);
+  if (!lesson) throw createError(404, "Lesson not found");
+
+  const comment = await Comment.create({
+    content,
+    lesson: lessonId,
+    user: userId,     // server tự gán từ token
+  });
+
+  // populate user trước khi trả về để client thấy username ngay
+  return await comment.populate("user", "username avatar");
+}
+
+export async function updateComment(lessonId, commentId, userId, userRole, content) {
+  const comment = await Comment.findOne({
+    _id: commentId,
+    lesson: lessonId,
+  });
+
+  if (!comment) throw createError(404, "Comment not found");
+
+  // ⭐ Ownership check theo User — khác Lesson check theo Course
+  const isOwner = comment.user.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isOwner && !isAdmin) {
+    throw createError(403, "Bạn không có quyền sửa comment này");
+  }
+
+  comment.content = content;
+  return await comment.save();
+}
+
+export async function deleteComment(lessonId, commentId, userId, userRole) {
+  const comment = await Comment.findOne({
+    _id: commentId,
+    lesson: lessonId,
+  });
+
+  if (!comment) throw createError(404, "Comment not found");
+
+  const isOwner = comment.user.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isOwner && !isAdmin) {
+    throw createError(403, "Bạn không có quyền xóa comment này");
+  }
+
+  await Comment.findByIdAndDelete(commentId);
+}
+
+File 3 — Controller
+js// src/controllers/lessonController.js
+import * as lessonService from "../services/lessonService.js";
+
+export async function getAll(req, res) {
+  const lessons = await lessonService.getLessonsByCourse(req.params.courseId);
+  res.json(lessons);
+}
+
+export async function getById(req, res) {
+  const lesson = await lessonService.getLessonById(
+    req.params.courseId,
+    req.params.id
+  );
+  res.json(lesson);
+}
+
+export async function create(req, res) {
+  const lesson = await lessonService.createLesson(
+    req.params.courseId,
+    req.user.id,
+    req.user.role,
+    req.body
+  );
+  res.status(201).json(lesson);
+}
+
+export async function update(req, res) {
+  const lesson = await lessonService.updateLesson(
+    req.params.courseId,
+    req.params.id,
+    req.user.id,
+    req.user.role,
+    req.body
+  );
+  res.json(lesson);
+}
+
+export async function remove(req, res) {
+  await lessonService.deleteLesson(
+    req.params.courseId,
+    req.params.id,
+    req.user.id,
+    req.user.role
+  );
+  res.json({ message: "Lesson deleted" });
+}
+js// src/controllers/commentController.js
+import * as commentService from "../services/commentService.js";
+
+export async function getAll(req, res) {
+  const comments = await commentService.getCommentsByLesson(
+    req.params.lessonId
+  );
+  res.json(comments);
+}
+
+export async function create(req, res) {
+  const comment = await commentService.createComment(
+    req.params.lessonId,
+    req.user.id,
+    req.body.content
+  );
+  res.status(201).json(comment);
+}
+
+export async function update(req, res) {
+  const comment = await commentService.updateComment(
+    req.params.lessonId,
+    req.params.id,
+    req.user.id,
+    req.user.role,
+    req.body.content
+  );
+  res.json(comment);
+}
+
+export async function remove(req, res) {
+  await commentService.deleteComment(
+    req.params.lessonId,
+    req.params.id,
+    req.user.id,
+    req.user.role
+  );
+  res.json({ message: "Comment deleted" });
+}
+
+File 4 — Route
+js// src/routes/lessonRoutes.js
+import express from "express";
+import auth from "../middlewares/auth.js";
+import role from "../middlewares/role.js";
+import validate from "../middlewares/validate.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
+import * as lessonController from "../controllers/lessonController.js";
+import {
+  createLessonSchema,
+  updateLessonSchema,
+} from "../validations/lessonValidation.js";
+
+// ⭐ mergeParams: true — để đọc được :courseId từ app.js
+const router = express.Router({ mergeParams: true });
+
+// public
+router.get("/",    asyncHandler(lessonController.getAll));
+router.get("/:id", asyncHandler(lessonController.getById));
+
+// teacher/admin — ownership check nằm trong service
+router.post("/",
+  auth, role("teacher", "admin"),
+  validate(createLessonSchema),
+  asyncHandler(lessonController.create)
+);
+
+router.put("/:id",
+  auth, role("teacher", "admin"),
+  validate(updateLessonSchema),
+  asyncHandler(lessonController.update)
+);
+
+router.delete("/:id",
+  auth, role("teacher", "admin"),
+  asyncHandler(lessonController.remove)
+);
+
+export default router;
+js// src/routes/commentRoutes.js
+import express from "express";
+import auth from "../middlewares/auth.js";
+import validate from "../middlewares/validate.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
+import * as commentController from "../controllers/commentController.js";
+import {
+  createCommentSchema,
+  updateCommentSchema,
+} from "../validations/commentValidation.js";
+
+// ⭐ mergeParams: true — để đọc được :lessonId từ app.js
+const router = express.Router({ mergeParams: true });
+
+// public
+router.get("/", asyncHandler(commentController.getAll));
+
+// mọi user đã login — không giới hạn role
+router.post("/",
+  auth,
+  validate(createCommentSchema),
+  asyncHandler(commentController.create)
+);
+
+router.put("/:id",
+  auth,
+  validate(updateCommentSchema),
+  asyncHandler(commentController.update)
+);
+
+router.delete("/:id",
+  auth,
+  asyncHandler(commentController.remove)
+);
+
+export default router;
+
+File 5 — Cập nhật app.js
+js// app.js — thêm 2 dòng này vào đúng vị trí
+import lessonRoutes  from "./src/routes/lessonRoutes.js";
+import commentRoutes from "./src/routes/commentRoutes.js";
+
+// đặt sau categoryRoutes và courseRoutes
+app.use("/api/courses/:courseId/lessons",  lessonRoutes);
+app.use("/api/lessons/:lessonId/comments", commentRoutes);
+
+Checklist test Postman ngày 3:
+□ POST /api/courses/:courseId/lessons         → tạo 3 lesson với order 1, 2, 3
+□ GET  /api/courses/:courseId/lessons         → phải ra đúng thứ tự order
+□ PUT  /api/courses/:courseId/lessons/:id     → sửa bằng token teacher khác → 403
+□ POST /api/lessons/:lessonId/comments        → student đăng comment
+□ GET  /api/lessons/:lessonId/comments        → có username, mới nhất trước
+□ PUT  /api/lessons/:lessonId/comments/:id    → sửa comment của người khác → 403
+□ DELETE /api/lessons/:lessonId/comments/:id  → admin xóa được tất cả
+Sau khi test xong toàn bộ, cấu trúc LMS của bạn đã hoàn chỉnh về mặt CRUD. Ngày 4 sẽ review lại toàn bộ RBAC, viết README, và chuẩn bị deploy. Gặp lỗi gì trong quá trình test báo mình nhé.

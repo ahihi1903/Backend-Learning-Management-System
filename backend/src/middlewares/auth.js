@@ -1,0 +1,58 @@
+// //xác thực
+import { verifyToken } from "../utils/jwt.js";
+import createError from "./createError.js";
+
+// export default function auth(req, res, next) {
+//   const header = req.headers.authorization;
+
+//   if (!header) {
+//     //throw createError(401, "No token");
+//     return res.status(401).json({
+//       message: "No token",
+//     });
+//   }
+
+//   // const token = header.split(" ")[1];
+//   const [scheme, token] = header?.split(" ") ?? [];
+
+//   if (!token) {
+//     //throw createError(402, "No token");
+//     return res.status(402).json({
+//       message: "No token",
+//     });
+//   }
+
+//   if (scheme !== "Bearer" || !token) {
+//     return res.status(401).json({
+//       message: "Authorization header must use Bearer token",
+//     });
+//   }
+
+//   const user = verifyToken(token);
+
+//   if (!user || user.error) {
+//     //throw createError(401, "Invalid token");
+//     return res.status(401).json({
+//       message: "Invalid token",
+//     });
+//   }
+
+//   req.user = user;
+//   next();
+// }
+export default function auth(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "No token" });
+  }
+
+  const token = header.split(" ")[1];
+  const user = verifyToken(token);
+
+  if (!user || user.error) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+
+  req.user = user;
+  next();
+}
