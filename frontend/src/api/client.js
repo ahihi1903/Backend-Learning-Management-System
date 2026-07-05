@@ -1,4 +1,10 @@
-const API_PREFIX = "/api";
+function resolveApiPrefix(value) {
+  const configured = value?.trim().replace(/\/+$/, "");
+  if (!configured) return "/api";
+  return configured.endsWith("/api") ? configured : `${configured}/api`;
+}
+
+const API_PREFIX = resolveApiPrefix(import.meta.env?.VITE_API_URL);
 let accessToken = localStorage.getItem("lms_access_token") || "";
 
 export class ApiError extends Error {
@@ -39,7 +45,23 @@ async function send(path, options = {}) {
 
 async function parse(response) {
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      const preview = text.replace(/\s+/g, " ").trim().slice(0, 120);
+      const missingApi = response.status === 404 && /NOT_FOUND|The page could not/i.test(text);
+      throw new ApiError(response.status || 502, {
+        message: missingApi
+          ? "Không tìm thấy backend API. Hãy cấu hình VITE_API_URL trên môi trường deploy."
+          : `Backend trả về dữ liệu không phải JSON${preview ? `: ${preview}` : "."}`,
+        responseType: response.headers.get("content-type") || "unknown",
+      });
+    }
+  }
+
   if (!response.ok) throw new ApiError(response.status, data);
   return data;
 }

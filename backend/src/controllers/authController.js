@@ -3,10 +3,12 @@ import * as authService from "../services/authService.js";
 const REFRESH_COOKIE = "refreshToken";
 
 function refreshCookieOptions() {
+  const isProduction = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProduction,
+    // Frontend (Vercel) và backend thường ở hai domain khác nhau khi deploy.
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/api/auth",
   };

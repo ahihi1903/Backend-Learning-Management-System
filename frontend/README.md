@@ -27,6 +27,24 @@ Truy cập `http://localhost:5173`.
 
 ## Production build
 
+Frontend cần biết địa chỉ backend khi deploy độc lập. Tạo biến môi trường:
+
+```env
+VITE_API_URL=https://your-lms-api.onrender.com
+```
+
+Có thể dùng URL gốc hoặc URL kết thúc bằng `/api`; client sẽ tự chuẩn hóa. Trên Vercel, thêm biến này tại **Project Settings → Environment Variables** cho Production và Preview, sau đó redeploy.
+
+Backend production cần tối thiểu:
+
+```env
+NODE_ENV=production
+FRONTEND_URL=https://backend-learning-management-system-chi.vercel.app
+TRUST_PROXY=true
+```
+
+`FRONTEND_URL` phải khớp chính xác origin frontend, không thêm path.
+
 ```powershell
 npm.cmd run build
 ```
