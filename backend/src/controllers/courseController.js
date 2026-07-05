@@ -7,12 +7,12 @@ export async function create(req, res) {
 }
 
 export async function getAll(req, res) {
-  const result = await courseService.getAllCourses(req.query);
+  const result = await courseService.getAllCourses(req.validatedQuery || req.query);
   res.json(result);
 }
 
 export async function getById(req, res) {
-  const course = await courseService.getCourseById(req.params.id);
+  const course = await courseService.getCourseById(req.params.id, req.user);
   res.json(course);
 }
 

@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 //const SECRET = process.env.JWT_SECRET; //khóa bí mật(secret) cua tôi
 //console.log("JWT_SECRET =", process.env.JWT_SECRET);
@@ -13,15 +14,15 @@ export function generateAccessToken(user) {
     //secret:bảo mật
     process.env.JWT_ACCESS_SECRET,
     //option:lựa chọn 1h
-    { expiresIn: "15m" },
+    { expiresIn: process.env.JWT_EXPIRES_IN || "15m" },
   );
 }
 
 export function generateRefreshToken(user) {
   return jwt.sign(
-    { id: user.id },
+    { id: user.id, jti: crypto.randomUUID() },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }, //7d
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d" }, //7d
   );
 }
 

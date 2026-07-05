@@ -9,17 +9,33 @@ import {
   createLessonSchema,
   updateLessonSchema,
 } from "../validations/lessonValidation.js";
+import { validateParams } from "../middlewares/validateRequest.js";
+import {
+  courseIdParamSchema,
+  courseItemParamSchema,
+} from "../validations/commonValidation.js";
 
 // ⭐ mergeParams: true — để đọc được :courseId từ app.js
 const router = express.Router({ mergeParams: true });
 
 // public
-router.get("/", asyncHandler(lessonController.getAll));
-router.get("/:id", asyncHandler(lessonController.getById));
+router.get(
+  "/",
+  validateParams(courseIdParamSchema),
+  auth,
+  asyncHandler(lessonController.getAll),
+);
+router.get(
+  "/:id",
+  validateParams(courseItemParamSchema),
+  auth,
+  asyncHandler(lessonController.getById),
+);
 
 // teacher/admin — ownership check nằm trong service
 router.post(
   "/",
+  validateParams(courseIdParamSchema),
   auth,
   role("teacher", "admin"),
   validate(createLessonSchema),
@@ -28,6 +44,7 @@ router.post(
 
 router.put(
   "/:id",
+  validateParams(courseItemParamSchema),
   auth,
   role("teacher", "admin"),
   validate(updateLessonSchema),
@@ -36,6 +53,7 @@ router.put(
 
 router.delete(
   "/:id",
+  validateParams(courseItemParamSchema),
   auth,
   role("teacher", "admin"),
   asyncHandler(lessonController.remove),

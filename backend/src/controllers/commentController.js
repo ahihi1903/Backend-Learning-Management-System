@@ -4,6 +4,7 @@ import * as commentService from "../services/commentService.js";
 export async function getAll(req, res) {
   const comments = await commentService.getCommentsByLesson(
     req.params.lessonId,
+    req.user,
   );
   res.json(comments);
 }
@@ -13,6 +14,7 @@ export async function create(req, res) {
     req.params.lessonId,
     req.user.id,
     req.body.content,
+    req.user,
   );
   res.status(201).json(comment);
 }

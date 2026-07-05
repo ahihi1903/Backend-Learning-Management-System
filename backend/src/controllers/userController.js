@@ -3,7 +3,7 @@ import * as userService from "../services/userService.js";
 
 // GET /api/users — admin only
 export async function getAll(req, res) {
-  const result = await userService.getAllUsers(req.query);
+  const result = await userService.getAllUsers(req.validatedQuery || req.query);
   res.json(result);
 }
 

@@ -2,7 +2,10 @@
 import * as lessonService from "../services/lessonService.js";
 
 export async function getAll(req, res) {
-  const lessons = await lessonService.getLessonsByCourse(req.params.courseId);
+  const lessons = await lessonService.getLessonsByCourse(
+    req.params.courseId,
+    req.user,
+  );
   res.json(lessons);
 }
 
@@ -10,6 +13,7 @@ export async function getById(req, res) {
   const lesson = await lessonService.getLessonById(
     req.params.courseId,
     req.params.id,
+    req.user,
   );
   res.json(lesson);
 }

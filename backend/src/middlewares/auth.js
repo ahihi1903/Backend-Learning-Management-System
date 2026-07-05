@@ -1,6 +1,6 @@
 // //xác thực
 import { verifyToken } from "../utils/jwt.js";
-import createError from "./createError.js";
+import User from "../models/User.js";
 
 // export default function auth(req, res, next) {
 //   const header = req.headers.authorization;
@@ -40,7 +40,7 @@ import createError from "./createError.js";
 //   req.user = user;
 //   next();
 // }
-export default function auth(req, res, next) {
+export default async function auth(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     return res.status(401).json({ message: "No token" });
@@ -53,6 +53,22 @@ export default function auth(req, res, next) {
     return res.status(401).json({ message: "Invalid token" });
   }
 
-  req.user = user;
-  next();
+  try {
+    const currentUser = await User.findById(user.id).select(
+      "username role isVerified",
+    );
+    if (!currentUser) {
+      return res.status(401).json({ message: "User no longer exists" });
+    }
+
+    req.user = {
+      id: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      isVerified: currentUser.isVerified,
+    };
+    next();
+  } catch (error) {
+    next(error);
+  }
 }

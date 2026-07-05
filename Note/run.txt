@@ -1,0 +1,131 @@
+Frontend không chạy trực tiếp một file. Bạn mở terminal tại thư mục frontend rồi chạy:
+cd "F:\Backend Learning Management System\frontend"
+npm.cmd run dev
+Sau đó mở trình duyệt:
+http://localhost:5173
+Đồng thời backend phải chạy ở terminal khác:
+cd "F:\Backend Learning Management System\backend"
+npm.cmd start
+
+
+
+Để test toàn bộ web, bạn cần chạy backend và frontend cùng lúc.
+1. Khởi động hệ thống
+Terminal 1:
+cd "F:\Backend Learning Management System\backend"
+npm.cmd start
+Terminal 2:
+cd "F:\Backend Learning Management System\frontend"
+npm.cmd run dev
+Mở trình duyệt:
+http://localhost:5173
+Kiểm tra backend:
+http://localhost:3000/health/ready
+Kết quả đúng:
+{
+  "status": "ready",
+  "database": "connected"
+}
+2. Tạo Admin đầu tiên
+Thêm vào backend/.env:
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=StrongAdminPass1
+Sau đó chạy một lần:
+cd "F:\Backend Learning Management System\backend"
+npm.cmd run seed:admin
+3. Test luồng Admin
+Đăng nhập:
+Email: admin@example.com
+Password: StrongAdminPass1
+Thực hiện:
+Mở trang Admin.
+Tạo category, ví dụ Backend Development.
+Kiểm tra category xuất hiện trong danh sách.
+Tìm một tài khoản student.
+Đổi role từ student thành teacher.
+Thử xóa category đang được course sử dụng — phải bị từ chối.
+4. Tạo tài khoản Teacher
+Trước tiên đăng xuất admin, sau đó:
+Chọn Bắt đầu học.
+Đăng ký tài khoản:
+Username: teacher01
+Email: teacher01@example.com
+Password: StrongPass1
+Xác thực email.
+Đăng nhập lại bằng Admin.
+Vào Admin Console.
+Đổi role teacher01 thành teacher.
+Đăng xuất Admin.
+Đăng nhập lại tài khoản Teacher.
+5. Test luồng Teacher
+Vào Teacher Studio:
+Tạo course mới.
+Chọn category vừa tạo.
+Kiểm tra course mặc định là Draft.
+Tạo hai lesson với order là 1 và 2.
+Chọn lesson rồi tạo quiz.
+Tạo assignment.
+Nhấn Publish course.
+Mở trang course và kiểm tra lesson đúng thứ tự.
+Nên thử course draft trước khi publish:
+Khách hoặc student không được xem draft.
+Teacher sở hữu course vẫn xem được.
+6. Tạo tài khoản Student
+Đăng xuất Teacher và đăng ký:
+Username: student01
+Email: student01@example.com
+Password: StrongPass1
+Sau đó:
+Xác thực email.
+Đăng nhập.
+Mở trang Khóa học.
+Tìm course Teacher vừa publish.
+Nhấn Đăng ký khóa học.
+7. Test luồng học tập
+Sau khi enrollment:
+Mở lesson đầu tiên.
+Đọc nội dung hoặc mở video.
+Nhấn Đánh dấu hoàn thành.
+Kiểm tra progress tăng.
+Viết comment.
+Mở tab Quiz.
+Trả lời và nộp quiz.
+Kiểm tra kết quả score/pass.
+Mở Assignment.
+Nhập nội dung và nộp bài.
+Hoàn thành tất cả lesson.
+Kiểm tra progress thành 100%.
+8. Test Teacher chấm bài
+Đăng nhập lại Teacher:
+Mở Teacher Studio.
+Chọn course và assignment.
+Xem danh sách submission.
+Hiện frontend đã có phần tạo assignment nhưng giao diện danh sách/chấm submission chưa được mở thành màn riêng; API chấm điểm có thể test bằng Postman:
+PATCH /api/lessons/:lessonId/assignments/:assignmentId/submissions/:submissionId/grade
+{
+  "score": 90,
+  "feedback": "Bài làm tốt"
+}
+9. Các trường hợp lỗi nên thử
+Thao tác	Kết quả mong đợi
+Sai password	Báo email hoặc mật khẩu không đúng
+Student vào Admin	Chuyển về trang chủ
+Student tạo course	403 Forbidden
+Student chưa enroll mở lesson	403
+Khách xem course draft	404
+Teacher sửa course người khác	403
+Comment rỗng	400
+Quiz chưa trả lời đủ	Hiện cảnh báo
+Assignment hết hạn	Không cho nộp
+URL chứa ID sai	400
+Gọi quá nhiều request	429
+
+Luồng test đầy đủ nhất là:
+Admin tạo category
+→ Admin cấp role Teacher
+→ Teacher tạo và publish course
+→ Student enrollment
+→ Student học, quiz, assignment, comment
+→ Teacher chấm bài
+→ Student hoàn thành course

@@ -8,16 +8,27 @@ import {
   createCommentSchema,
   updateCommentSchema,
 } from "../validations/commentValidation.js";
+import { validateParams } from "../middlewares/validateRequest.js";
+import {
+  lessonIdParamSchema,
+  lessonItemParamSchema,
+} from "../validations/commonValidation.js";
 
 // ⭐ mergeParams: true — để đọc được :lessonId từ app.js
 const router = express.Router({ mergeParams: true });
 
 // public
-router.get("/", asyncHandler(commentController.getAll));
+router.get(
+  "/",
+  validateParams(lessonIdParamSchema),
+  auth,
+  asyncHandler(commentController.getAll),
+);
 
 // mọi user đã login — không giới hạn role
 router.post(
   "/",
+  validateParams(lessonIdParamSchema),
   auth,
   validate(createCommentSchema),
   asyncHandler(commentController.create),
@@ -25,11 +36,17 @@ router.post(
 
 router.put(
   "/:id",
+  validateParams(lessonItemParamSchema),
   auth,
   validate(updateCommentSchema),
   asyncHandler(commentController.update),
 );
 
-router.delete("/:id", auth, asyncHandler(commentController.remove));
+router.delete(
+  "/:id",
+  validateParams(lessonItemParamSchema),
+  auth,
+  asyncHandler(commentController.remove),
+);
 
 export default router;

@@ -2,6 +2,9 @@
 import Course from "../models/Course.js";
 import Category from "../models/Category.js";
 import createError from "../middlewares/createError.js";
+import { withTransaction } from "../utils/transaction.js";
+import { deleteCourseCascade } from "./cascadeService.js";
+import escapeRegex from "../utils/escapeRegex.js";
 
 export async function createCourse(teacherId, data) {
   // kiểm tra category tồn tại trước khi tạo
@@ -23,7 +26,7 @@ export async function getAllCourses(query = {}) {
   if (category) filter.category = category;
 
   if (search) {
-    filter.title = { $regex: search, $options: "i" }; // tìm kiếm không phân biệt hoa thường
+    filter.title = { $regex: escapeRegex(search), $options: "i" };
   }
 
   const skip = (page - 1) * limit;
@@ -49,12 +52,19 @@ export async function getAllCourses(query = {}) {
   };
 }
 
-export async function getCourseById(id) {
+export async function getCourseById(id, requester) {
   const course = await Course.findById(id)
     .populate("teacher", "username avatar")
     .populate("category", "name slug");
 
   if (!course) throw createError(404, "Course not found");
+
+  if (!course.isPublished) {
+    const isOwner = requester?.id === course.teacher?._id?.toString();
+    const isAdmin = requester?.role === "admin";
+    if (!isOwner && !isAdmin) throw createError(404, "Course not found");
+  }
+
   return course;
 }
 
@@ -69,6 +79,11 @@ export async function updateCourse(courseId, userId, userRole, data) {
 
   if (!isOwner && !isAdmin) {
     throw createError(403, "Bạn không có quyền sửa course này");
+  }
+
+  if (data.category) {
+    const category = await Category.findById(data.category);
+    if (!category) throw createError(404, "Category not found");
   }
 
   Object.assign(course, data);
@@ -86,7 +101,7 @@ export async function deleteCourse(courseId, userId, userRole) {
     throw createError(403, "Bạn không có quyền xóa course này");
   }
 
-  await Course.findByIdAndDelete(courseId);
+  await withTransaction((session) => deleteCourseCascade(courseId, session));
 }
 
 // teacher xem tất cả course của mình (kể cả draft)

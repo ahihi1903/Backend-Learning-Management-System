@@ -9,12 +9,14 @@ import {
   createCategorySchema,
   updateCategorySchema,
 } from "../validations/categoryValidation.js";
+import { validateParams } from "../middlewares/validateRequest.js";
+import { idParamSchema } from "../validations/commonValidation.js";
 
 const router = express.Router();
 
 // public
 router.get("/", asyncHandler(categoryController.getAll));
-router.get("/:id", asyncHandler(categoryController.getById));
+router.get("/:id", validateParams(idParamSchema), asyncHandler(categoryController.getById));
 
 // admin only
 router.post(
@@ -27,6 +29,7 @@ router.post(
 
 router.put(
   "/:id",
+  validateParams(idParamSchema),
   auth,
   role("admin"),
   validate(updateCategorySchema),
@@ -35,6 +38,7 @@ router.put(
 
 router.delete(
   "/:id",
+  validateParams(idParamSchema),
   auth,
   role("admin"),
   asyncHandler(categoryController.remove),

@@ -1,0 +1,169 @@
+/* Reusable UI primitives layered above the core design system. */
+
+body,
+.topbar,
+.footer,
+.auth-card,
+.course-card,
+.settings-card,
+.studio-panel,
+.admin-panel {
+  transition: background-color var(--duration-normal) var(--ease-in-out),
+              border-color var(--duration-normal) var(--ease-in-out),
+              color var(--duration-normal) var(--ease-in-out);
+}
+
+.theme-toggle { flex: 0 0 auto; }
+.mobile-theme-row {
+  width: 100%;
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  background: var(--color-hover);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.form-field {
+  display: grid;
+  gap: 7px;
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.form-field-label { display: inline-flex; align-items: center; gap: 6px; }
+.form-field-hint,
+.form-field-error { font-size: 0.72rem; font-weight: 500; line-height: 1.4; }
+.form-field-hint { color: var(--color-text-muted); }
+.form-field-error { color: var(--color-danger); }
+.form-field input[aria-invalid="true"] { border-color: var(--color-danger); }
+
+.password-control { position: relative; display: block; }
+.password-control input { padding-right: 46px; }
+.password-control > button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--color-text-muted);
+  transform: translateY(-50%);
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+.password-control > button:hover { color: var(--color-text); background: var(--color-hover); }
+
+.button-loader {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+.button-danger {
+  color: white;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.button-danger:hover:not(:disabled) {
+  color: white;
+  background: color-mix(in srgb, var(--color-danger) 86%, black);
+  border-color: color-mix(in srgb, var(--color-danger) 86%, black);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-danger) 28%, transparent);
+}
+
+.toast-viewport {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 180;
+  width: min(380px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  padding: 13px 13px 13px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px) saturate(1.25);
+  animation: toastIn 0.32s var(--ease-out) both;
+  pointer-events: auto;
+}
+.toast-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
+}
+.toast-error .toast-icon { color: var(--color-danger); background: var(--color-danger-surface); }
+.toast p { font-size: 0.84rem; font-weight: 600; line-height: 1.45; }
+.toast > button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--color-text-muted);
+}
+.toast > button:hover { color: var(--color-text); background: var(--color-hover); }
+
+.dialog-layer { position: fixed; inset: 0; z-index: 170; display: grid; place-items: center; padding: 20px; }
+.dialog-backdrop { position: absolute; inset: 0; width: 100%; border-radius: 0; background: rgba(4, 8, 6, 0.56); backdrop-filter: blur(6px); animation: fadeInSoft 0.2s both; }
+.confirm-dialog {
+  position: relative;
+  width: min(440px, 100%);
+  padding: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-xl);
+  animation: scaleIn 0.25s var(--ease-out) both;
+}
+.dialog-close { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: var(--color-text-muted); }
+.dialog-close:hover { color: var(--color-text); background: var(--color-hover); }
+.dialog-symbol { width: 46px; height: 46px; display: grid; place-items: center; margin-bottom: 18px; border-radius: 50%; color: var(--color-primary); background: var(--color-primary-subtle); }
+.dialog-symbol.danger { color: var(--color-danger); background: var(--color-danger-surface); }
+.confirm-dialog h2 { margin-bottom: 9px; font-size: 1.35rem; letter-spacing: -0.03em; }
+.confirm-dialog > p { color: var(--color-text-muted); line-height: 1.65; font-size: 0.9rem; }
+.dialog-actions { margin-top: 26px; display: flex; justify-content: flex-end; gap: 9px; }
+
+.skeleton { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--color-hover) 20%, var(--color-border) 45%, var(--color-hover) 70%); background-size: 220% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+.skeleton-card { pointer-events: none; animation: fadeInSoft 0.25s both; }
+.skeleton-cover { height: 170px; border-radius: 0; }
+.skeleton-card-body { padding: 18px; display: grid; gap: 11px; }
+.skeleton-line { width: 100%; height: 10px; }
+.skeleton-line.short { width: 34%; height: 8px; }
+.skeleton-line.title { width: 78%; height: 17px; margin-top: 3px; }
+.skeleton-line.medium { width: 62%; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translate3d(16px, -8px, 0) scale(0.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@media (max-width: 720px) {
+  .account-actions > .theme-toggle { display: none; }
+  .toast-viewport { top: 72px; right: 16px; }
+  .confirm-dialog { padding: 26px 22px 22px; border-radius: var(--radius-lg); }
+  .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; }
+}

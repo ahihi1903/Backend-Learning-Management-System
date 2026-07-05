@@ -5,11 +5,17 @@ import role from "../middlewares/role.js";
 import validate from "../middlewares/validate.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 import * as userController from "../controllers/userController.js";
+import * as enrollmentController from "../controllers/enrollmentController.js";
 import {
   updateUserSchema,
   changePasswordSchema,
   updateRoleSchema,
 } from "../validations/userValidation.js";
+import { validateParams, validateQuery } from "../middlewares/validateRequest.js";
+import {
+  idParamSchema,
+  userQuerySchema,
+} from "../validations/commonValidation.js";
 
 const router = express.Router();
 
@@ -18,6 +24,13 @@ const router = express.Router();
 
 // Profile của chính mình
 router.get("/me", auth, asyncHandler(userController.getMe));
+
+router.get(
+  "/me/enrollments",
+  auth,
+  role("student"),
+  asyncHandler(enrollmentController.listMine),
+);
 
 // Đổi mật khẩu
 router.put(
@@ -28,14 +41,26 @@ router.put(
 );
 
 // Danh sách user — admin only
-router.get("/", auth, role("admin"), asyncHandler(userController.getAll));
+router.get(
+  "/",
+  auth,
+  role("admin"),
+  validateQuery(userQuerySchema),
+  asyncHandler(userController.getAll),
+);
 
 // Chi tiết user — admin hoặc chính mình (check trong service)
-router.get("/:id", auth, asyncHandler(userController.getById));
+router.get(
+  "/:id",
+  validateParams(idParamSchema),
+  auth,
+  asyncHandler(userController.getById),
+);
 
 // Sửa thông tin — admin hoặc chính mình
 router.put(
   "/:id",
+  validateParams(idParamSchema),
   auth,
   validate(updateUserSchema),
   asyncHandler(userController.update),
@@ -44,6 +69,7 @@ router.put(
 // Đổi role — admin only
 router.patch(
   "/:id/role",
+  validateParams(idParamSchema),
   auth,
   role("admin"),
   validate(updateRoleSchema),
@@ -51,6 +77,11 @@ router.patch(
 );
 
 // Xóa user — admin hoặc chính mình
-router.delete("/:id", auth, asyncHandler(userController.remove));
+router.delete(
+  "/:id",
+  validateParams(idParamSchema),
+  auth,
+  asyncHandler(userController.remove),
+);
 
 export default router;

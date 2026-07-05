@@ -2,6 +2,9 @@
 import User from "../models/User.js";
 import createError from "../middlewares/createError.js";
 import { comparePassword, hashPassword } from "../utils/hash.js";
+import { withTransaction } from "../utils/transaction.js";
+import { deleteUserCascade } from "./cascadeService.js";
+import escapeRegex from "../utils/escapeRegex.js";
 
 // Các field nhạy cảm không bao giờ trả về client
 const EXCLUDE_FIELDS =
@@ -13,9 +16,10 @@ export async function getAllUsers(query = {}) {
   const filter = {};
   if (role) filter.role = role;
   if (search) {
+    const safeSearch = escapeRegex(search);
     filter.$or = [
-      { username: { $regex: search, $options: "i" } },
-      { email: { $regex: search, $options: "i" } },
+      { username: { $regex: safeSearch, $options: "i" } },
+      { email: { $regex: safeSearch, $options: "i" } },
     ];
   }
 
@@ -74,7 +78,7 @@ export async function updateUser(targetId, requesterId, requesterRole, data) {
   }
 
   const user = await User.findByIdAndUpdate(targetId, data, {
-    new: true,
+    returnDocument: "after",
   }).select(EXCLUDE_FIELDS);
 
   if (!user) throw createError(404, "User not found");
@@ -82,7 +86,7 @@ export async function updateUser(targetId, requesterId, requesterRole, data) {
 }
 
 export async function changePassword(userId, currentPassword, newPassword) {
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).select("+password +refreshToken");
   if (!user) throw createError(404, "User not found");
 
   // kiểm tra password hiện tại đúng không
@@ -90,15 +94,26 @@ export async function changePassword(userId, currentPassword, newPassword) {
   if (!isMatch) throw createError(401, "Mật khẩu hiện tại không đúng");
 
   user.password = await hashPassword(newPassword);
+  user.refreshToken = null;
   await user.save();
 }
 
 export async function updateRole(targetId, role) {
+  const target = await User.findById(targetId);
+  if (!target) throw createError(404, "User not found");
+
+  if (target.role === "admin" && role !== "admin") {
+    const adminCount = await User.countDocuments({ role: "admin" });
+    if (adminCount <= 1) {
+      throw createError(400, "Không thể hạ role của admin duy nhất");
+    }
+  }
+
   // chỉ admin gọi được — đã check ở route
   const user = await User.findByIdAndUpdate(
     targetId,
     { role },
-    { new: true },
+    { returnDocument: "after" },
   ).select(EXCLUDE_FIELDS);
 
   if (!user) throw createError(404, "User not found");
@@ -119,6 +134,8 @@ export async function deleteUser(targetId, requesterId, requesterRole) {
     }
   }
 
-  const user = await User.findByIdAndDelete(targetId);
+  const user = await withTransaction((session) =>
+    deleteUserCascade(targetId, session),
+  );
   if (!user) throw createError(404, "User not found");
 }

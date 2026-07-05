@@ -1,20 +1,18 @@
 // src/services/commentService.js
 import Comment from "../models/Comment.js";
-import Lesson from "../models/Lesson.js";
 import createError from "../middlewares/createError.js";
+import { getLessonWithAccess } from "./accessService.js";
 
-export async function getCommentsByLesson(lessonId) {
-  const lesson = await Lesson.findById(lessonId);
-  if (!lesson) throw createError(404, "Lesson not found");
+export async function getCommentsByLesson(lessonId, requester) {
+  await getLessonWithAccess(lessonId, requester);
 
   return await Comment.find({ lesson: lessonId })
     .populate("user", "username avatar") // hiển thị tên người bình luận
     .sort({ createdAt: -1 }); // mới nhất trước
 }
 
-export async function createComment(lessonId, userId, content) {
-  const lesson = await Lesson.findById(lessonId);
-  if (!lesson) throw createError(404, "Lesson not found");
+export async function createComment(lessonId, userId, content, requester) {
+  await getLessonWithAccess(lessonId, requester);
 
   const comment = await Comment.create({
     content,
