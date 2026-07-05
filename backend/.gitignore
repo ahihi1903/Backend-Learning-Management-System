@@ -1,6 +1,7 @@
 # .gitignore
 node_modules/
 .env
+.env.example
 logs/
 uploads/
 *.log
