@@ -70,7 +70,7 @@ function logEmailFailure(error, context) {
 }
 
 function emailUnavailableError(message = "Không thể gửi email. Vui lòng thử lại sau") {
-  return createError(503, message);
+  return createError(503, message, { expose: true });
 }
 
 async function sendVerificationEmail(user, otp) {

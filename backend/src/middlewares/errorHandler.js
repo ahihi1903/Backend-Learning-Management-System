@@ -22,7 +22,7 @@ export default function errorHandler(err, req, res, next) {
     message = "Dữ liệu đã tồn tại";
   }
 
-  if (status >= 500 && process.env.NODE_ENV === "production") {
+  if (status >= 500 && process.env.NODE_ENV === "production" && !err.expose) {
     message = "Internal Server Error";
   }
 
