@@ -60,9 +60,12 @@ function logEmailFailure(error, context) {
     event: "email_send_failed",
     ...context,
     message: error.message,
+    provider: error.provider,
+    status: error.status,
     code: error.code,
     command: error.command,
     responseCode: error.responseCode,
+    response: error.response,
   });
 }
 
