@@ -1,15 +1,20 @@
 const REQUIRED = ["MONGO_URI", "JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"];
 
+function validatePort(name, fallback) {
+  const value = Number(process.env[name] || fallback);
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new Error(`${name} không hợp lệ`);
+  }
+  return value;
+}
+
 export function validateEnv() {
   const missing = REQUIRED.filter((key) => !process.env[key]);
   if (missing.length) {
     throw new Error(`Thiếu biến môi trường: ${missing.join(", ")}`);
   }
 
-  const port = Number(process.env.PORT || 3000);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error("PORT không hợp lệ");
-  }
+  const port = validatePort("PORT", 3000);
 
   if (process.env.NODE_ENV === "production") {
     for (const key of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"]) {
@@ -23,6 +28,7 @@ export function validateEnv() {
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       throw new Error("EMAIL_USER và EMAIL_PASS là bắt buộc ở production");
     }
+    validatePort("SMTP_PORT", 587);
   }
 
   return { port };
