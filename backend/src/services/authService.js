@@ -42,22 +42,32 @@ function publicUser(user) {
   };
 }
 
+function tokenUser(user) {
+  return {
+    id: userId(user),
+    username: user.username,
+    email: user.email,
+    role: user.role,
+  };
+}
+
 function devValue(value) {
   return process.env.NODE_ENV === "production" ? undefined : value;
 }
 
-function dispatchEmail(task, context) {
-  setImmediate(() => {
-    Promise.resolve()
-      .then(task)
-      .catch((error) => {
-        logger.error({
-          event: "background_email_failed",
-          ...context,
-          message: error.message,
-        });
-      });
+function logEmailFailure(error, context) {
+  logger.error({
+    event: "email_send_failed",
+    ...context,
+    message: error.message,
+    code: error.code,
+    command: error.command,
+    responseCode: error.responseCode,
   });
+}
+
+function emailUnavailableError(message = "Không thể gửi email. Vui lòng thử lại sau") {
+  return createError(503, message);
 }
 
 async function sendVerificationEmail(user, otp) {
@@ -76,19 +86,46 @@ async function sendVerificationEmail(user, otp) {
   );
 }
 
-function queueVerificationEmail(user, otp) {
-  dispatchEmail(() => sendVerificationEmail(user, otp), {
-    type: "verification",
-    userId: userId(user),
-  });
+async function deliverVerificationEmail(user, otp) {
+  try {
+    await sendVerificationEmail(user, otp);
+  } catch (error) {
+    logEmailFailure(error, {
+      type: "verification",
+      userId: userId(user),
+      to: user.email,
+    });
+    throw emailUnavailableError(
+      "Không thể gửi OTP tới email này. Vui lòng kiểm tra email hoặc thử lại sau",
+    );
+  }
+}
+
+async function deliverResetPasswordEmail(user, resetUrl) {
+  try {
+    await sendEmail(
+      user.email,
+      "Đặt lại mật khẩu Northstar Learning",
+      `<p>Đặt lại mật khẩu tại <a href="${resetUrl}">${resetUrl}</a>. Link có hiệu lực trong 15 phút.</p>`,
+    );
+  } catch (error) {
+    logEmailFailure(error, {
+      type: "reset_password",
+      userId: userId(user),
+      to: user.email,
+    });
+    throw emailUnavailableError(
+      "Không thể gửi email đặt lại mật khẩu. Vui lòng thử lại sau",
+    );
+  }
 }
 
 async function issueSession(user) {
-  const tokenUser = { ...user, id: userId(user) };
-  const accessToken = generateAccessToken(tokenUser);
-  const refreshToken = generateRefreshToken(tokenUser);
+  const sessionUser = tokenUser(user);
+  const accessToken = generateAccessToken(sessionUser);
+  const refreshToken = generateRefreshToken(sessionUser);
   await User.updateOne(
-    { _id: tokenUser.id },
+    { _id: sessionUser.id },
     { $set: { refreshToken: hashToken(refreshToken) } },
   );
   return { accessToken, refreshToken, user: publicUser(user) };
@@ -127,7 +164,13 @@ export async function register(data) {
     verifyOtpLastSentAt: new Date(),
   });
 
-  queueVerificationEmail(user, otp);
+  try {
+    await deliverVerificationEmail(user, otp);
+  } catch (error) {
+    await User.deleteOne({ _id: user._id, isVerified: false });
+    throw error;
+  }
+
   return {
     user: publicUser(user),
     emailQueued: true,
@@ -172,7 +215,7 @@ export async function verifyEmail(rawOtp, email) {
 
 export async function resendVerification(email) {
   const user = await User.findOne({ email }).select(
-    "+verifyToken +verifyTokenExpire +verifyOtpLastSentAt",
+    "+verifyToken +verifyTokenExpire +verifyOtpAttempts +verifyOtpLastSentAt",
   );
 
   if (!user || user.isVerified) return {};
@@ -183,6 +226,13 @@ export async function resendVerification(email) {
     throw createError(429, "Vui lòng chờ 60 giây trước khi gửi lại OTP");
   }
 
+  const previousVerification = {
+    verifyToken: user.verifyToken,
+    verifyTokenExpire: user.verifyTokenExpire,
+    verifyOtpAttempts: user.verifyOtpAttempts,
+    verifyOtpLastSentAt: user.verifyOtpLastSentAt,
+  };
+
   const otp = createOtp();
   user.verifyToken = hashToken(otp);
   user.verifyTokenExpire = new Date(Date.now() + VERIFY_OTP_TTL);
@@ -190,9 +240,20 @@ export async function resendVerification(email) {
   user.verifyOtpLastSentAt = new Date();
   await user.save();
 
-  queueVerificationEmail(user, otp);
+  try {
+    await deliverVerificationEmail(user, otp);
+  } catch (error) {
+    user.verifyToken = previousVerification.verifyToken;
+    user.verifyTokenExpire = previousVerification.verifyTokenExpire;
+    user.verifyOtpAttempts = previousVerification.verifyOtpAttempts;
+    user.verifyOtpLastSentAt = previousVerification.verifyOtpLastSentAt;
+    await user.save();
+    throw error;
+  }
+
   return {
     emailQueued: true,
+    emailSent: true,
     verificationOtp: devValue(otp),
     verificationToken: devValue(otp),
   };
@@ -322,15 +383,21 @@ export async function forgotPassword(email) {
 
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   const resetUrl = `${frontendUrl}/reset-password?token=${rawResetToken}`;
-  dispatchEmail(
-    () =>
-      sendEmail(
-        user.email,
-        "Đặt lại mật khẩu Northstar Learning",
-        `<p>Đặt lại mật khẩu tại <a href="${resetUrl}">${resetUrl}</a>. Link có hiệu lực trong 15 phút.</p>`,
-      ),
-    { type: "reset_password", userId: userId(user) },
-  );
+
+  try {
+    await deliverResetPasswordEmail(user, resetUrl);
+  } catch (error) {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $unset: {
+          resetPasswordToken: "",
+          resetPasswordExpire: "",
+        },
+      },
+    );
+    throw error;
+  }
 
   return { resetToken: devValue(rawResetToken) };
 }
