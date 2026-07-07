@@ -9,22 +9,26 @@ xây dựng với Node.js, Express, MongoDB.
 - **Framework**: Express.js
 - **Database**: MongoDB + Mongoose
 - **Auth**: JWT (Access Token + Refresh Token)
-- **Email**: Nodemailer + Gmail App Password
+- **Email**: Nodemailer + Gmail App Password + OTP
+- **Social Auth**: Google Identity Services
 - **Validation**: Zod
-- **Upload**: Multer
+- **Video**: Signed direct upload lên Cloudinary
+- **Frontend**: React + Vite + Tailwind CSS
 - **Logging**: Morgan + Winston
 - **Deploy**: Render + MongoDB Atlas
 
 ## ✨ Tính năng
 
-- Đăng ký / Đăng nhập với JWT
-- Xác thực email, quên mật khẩu, đặt lại mật khẩu
+- Đăng ký / Đăng nhập với JWT hoặc Google Account
+- Xác thực email bằng OTP 6 số, quên mật khẩu, đặt lại mật khẩu
 - Refresh token tự động gia hạn session
 - Phân quyền 3 cấp: Admin / Teacher / Student
 - CRUD Category, Course, Lesson, Comment
 - Ownership check — Teacher chỉ sửa được nội dung của mình
 - Upload avatar
 - Pagination, Search, Filter
+- Enrollment, progress, quiz, assignment
+- Seed dữ liệu demo idempotent
 
 ## 🏃 Chạy local
 
@@ -64,11 +68,13 @@ src/
 |--------|----------|-------|------|
 | POST | /api/auth/register | Đăng ký | Public |
 | POST | /api/auth/login | Đăng nhập | Public |
+| POST | /api/auth/google | Đăng nhập Google | Public |
+| POST | /api/auth/verify-email | Xác nhận OTP email | Public |
+| POST | /api/auth/resend-verification | Gửi lại OTP | Public |
 | POST | /api/auth/refresh | Lấy access token mới | Cookie |
 | POST | /api/auth/logout | Đăng xuất | Login |
-| GET | /api/auth/verify-email/:token | Xác thực email | Public |
 | POST | /api/auth/forgot-password | Quên mật khẩu | Public |
-| POST | /api/auth/reset-password/:token | Đặt lại mật khẩu | Public |
+| POST | /api/auth/reset-password | Đặt lại mật khẩu | Public |
 
 ### Category
 | Method | Endpoint | Mô tả | Auth |

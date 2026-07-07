@@ -1,3 +1,22 @@
+@layer legacy, theme, base, components, utilities;
+@import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --color-brand-50: #eefbf4;
+  --color-brand-100: #d7f4e3;
+  --color-brand-500: #16a36a;
+  --color-brand-600: #0f8657;
+  --color-brand-700: #0e6b49;
+  --animate-fade-up: fade-up 420ms cubic-bezier(.2,.8,.2,1) both;
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer legacy {
 /* ════════════════════════════════════════════════════════════════
    Northstar LMS — Design System v2.0
    Inspired by: Apple · Linear · Vercel · Notion
@@ -2020,4 +2039,5 @@ input:focus, textarea:focus, select:focus {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
 }

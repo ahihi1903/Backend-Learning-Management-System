@@ -12,6 +12,7 @@ import progressRoutes from "./src/routes/progressRoutes.js";
 import quizRoutes from "./src/routes/quizRoutes.js";
 import assignmentRoutes from "./src/routes/assignmentRoutes.js";
 import healthRoutes from "./src/routes/healthRoutes.js";
+import mediaRoutes from "./src/routes/mediaRoutes.js";
 import morgan from "morgan";
 import requestLogger from "./src/middlewares/requestLogger.js";
 import cors from "cors";
@@ -52,6 +53,7 @@ app.use(morgan("dev"));
 
 //routes
 app.use("/api/auth", authRoutes);
+app.use("/api/media", mediaRoutes);
 app.use("/api/categories", categoryRoutes);// loại 
 app.use("/api/courses", courseRoutes);     // khóa học
 app.use("/api/courses/:courseId/enrollments", enrollmentRoutes);

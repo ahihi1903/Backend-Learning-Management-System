@@ -4,6 +4,7 @@ import validate from "../middlewares/validate.js";
 import * as authController from "../controllers/authController.js";
 import {
   emailSchemaBody,
+  googleLoginSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema,
@@ -37,6 +38,12 @@ router.post(
   sensitiveAuthLimit,
   validate(loginSchema),
   asyncHandler(authController.login),
+);
+router.post(
+  "/google",
+  sensitiveAuthLimit,
+  validate(googleLoginSchema),
+  asyncHandler(authController.googleLogin),
 );
 router.post(
   "/refresh",

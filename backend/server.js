@@ -7,9 +7,14 @@ import app from "./app.js";
 import connectDB from "./src/config/database.js";
 import { validateEnv } from "./src/config/env.js";
 import mongoose from "mongoose";
+import { seedDemoData } from "./src/services/demoSeedService.js";
 
 const { port } = validateEnv();
 await connectDB();
+if (process.env.AUTO_SEED_DEMO === "true") {
+  const demo = await seedDemoData();
+  console.log("Demo data ready", demo);
+}
 
 const server = app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);

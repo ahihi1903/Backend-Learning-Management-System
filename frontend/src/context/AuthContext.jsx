@@ -52,6 +52,16 @@ export function AuthProvider({ children }) {
     return result.user;
   }
 
+  async function loginWithGoogle(credential) {
+    const result = await api("/auth/google", {
+      method: "POST",
+      body: { credential },
+    });
+    setAccessToken(result.accessToken);
+    setUser(normalizeUser(result.user));
+    return result.user;
+  }
+
   async function logout() {
     try {
       await api("/auth/logout", { method: "POST", body: {} }, false);
@@ -62,7 +72,7 @@ export function AuthProvider({ children }) {
   }
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, setUser }),
+    () => ({ user, loading, login, loginWithGoogle, logout, setUser }),
     [user, loading],
   );
 

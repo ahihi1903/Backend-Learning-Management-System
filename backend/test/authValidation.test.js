@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  googleLoginSchema,
   loginSchema,
   registerSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
 } from "../src/validations/authValidation.js";
 
 test("register normalizes email and username", () => {
@@ -43,4 +45,21 @@ test("reset password accepts a strong password and token", () => {
   });
 
   assert.equal(result.success, true);
+});
+
+test("email verification requires a six digit OTP", () => {
+  assert.equal(verifyEmailSchema.safeParse({ otp: "123456" }).success, true);
+  assert.equal(verifyEmailSchema.safeParse({ otp: "12345" }).success, false);
+  assert.equal(verifyEmailSchema.safeParse({ otp: "abcdef" }).success, false);
+});
+
+test("google login requires a credential", () => {
+  assert.equal(
+    googleLoginSchema.safeParse({ credential: "short-token" }).success,
+    false,
+  );
+  assert.equal(
+    googleLoginSchema.safeParse({ credential: "x".repeat(100) }).success,
+    true,
+  );
 });

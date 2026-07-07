@@ -6,6 +6,16 @@ const lessonSchema = new mongoose.Schema(
     title: { type: String, required: true },
     content: { type: String, default: "" },
     videoUrl: { type: String, default: null },
+    video: {
+      publicId: { type: String, default: null },
+      playbackUrl: { type: String, default: null },
+      originalUrl: { type: String, default: null },
+      duration: { type: Number, default: null },
+      bytes: { type: Number, default: null },
+      format: { type: String, default: null },
+      width: { type: Number, default: null },
+      height: { type: Number, default: null },
+    },
 
     course: {
       type: mongoose.Schema.Types.ObjectId,

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
 import createError from "../middlewares/createError.js";
 import { comparePassword, hashPassword } from "../utils/hash.js";
@@ -11,146 +12,290 @@ import {
 import { sendEmail } from "../utils/sendEmail.js";
 import logger from "../utils/logger.js";
 
-const VERIFY_TOKEN_TTL = 24 * 60 * 60 * 1000;
+const VERIFY_OTP_TTL = 10 * 60 * 1000;
+const VERIFY_OTP_COOLDOWN = 60 * 1000;
+const VERIFY_OTP_MAX_ATTEMPTS = 5;
 const RESET_TOKEN_TTL = 15 * 60 * 1000;
+const googleClient = new OAuth2Client();
 
 function createRandomToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+function createOtp() {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+function userId(user) {
+  return String(user.id || user._id);
+}
+
 function publicUser(user) {
   return {
-    id: user.id,
+    id: userId(user),
     username: user.username,
     email: user.email,
     role: user.role,
     isVerified: user.isVerified,
     avatar: user.avatar,
+    authProvider: user.authProvider,
   };
 }
 
-function devToken(token) {
-  return process.env.NODE_ENV === "production" ? undefined : token;
+function devValue(value) {
+  return process.env.NODE_ENV === "production" ? undefined : value;
 }
 
-async function sendVerificationEmail(user, rawToken) {
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  const verifyUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
+function dispatchEmail(task, context) {
+  setImmediate(() => {
+    Promise.resolve()
+      .then(task)
+      .catch((error) => {
+        logger.error({
+          event: "background_email_failed",
+          ...context,
+          message: error.message,
+        });
+      });
+  });
+}
 
-  try {
-    await sendEmail(
-      user.email,
-      "Xác thực tài khoản LMS",
-      `<p>Xin chào ${user.username},</p><p>Hãy xác thực tài khoản tại <a href="${verifyUrl}">${verifyUrl}</a>. Link có hiệu lực trong 24 giờ.</p>`,
-    );
-    return true;
-  } catch (error) {
-    logger.error({
-      event: "verification_email_failed",
-      userId: user.id,
-      message: error.message,
-    });
-    return false;
+async function sendVerificationEmail(user, otp) {
+  await sendEmail(
+    user.email,
+    `${otp} là mã xác nhận Northstar Learning`,
+    `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#18181b">
+        <p>Xin chào ${user.username},</p>
+        <h2 style="margin-bottom:8px">Xác nhận tài khoản Northstar</h2>
+        <p>Nhập mã OTP dưới đây để hoàn tất đăng ký:</p>
+        <div style="font-size:32px;font-weight:800;letter-spacing:10px;padding:18px 22px;background:#f4f4f5;border-radius:14px;text-align:center">${otp}</div>
+        <p style="color:#71717a">Mã có hiệu lực trong 10 phút. Không chia sẻ mã này cho bất kỳ ai.</p>
+      </div>
+    `,
+  );
+}
+
+function queueVerificationEmail(user, otp) {
+  dispatchEmail(() => sendVerificationEmail(user, otp), {
+    type: "verification",
+    userId: userId(user),
+  });
+}
+
+async function issueSession(user) {
+  const tokenUser = { ...user, id: userId(user) };
+  const accessToken = generateAccessToken(tokenUser);
+  const refreshToken = generateRefreshToken(tokenUser);
+  await User.updateOne(
+    { _id: tokenUser.id },
+    { $set: { refreshToken: hashToken(refreshToken) } },
+  );
+  return { accessToken, refreshToken, user: publicUser(user) };
+}
+
+async function uniqueGoogleUsername(name, email) {
+  const source = (name || email.split("@")[0] || "learner")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 16) || "learner";
+
+  let candidate = source;
+  while (await User.exists({ username: candidate })) {
+    candidate = `${source.slice(0, 15)}${crypto.randomInt(1000, 9999)}`.slice(0, 20);
   }
+  return candidate;
 }
 
 export async function register(data) {
-  const exists = await User.findOne({
+  const exists = await User.exists({
     $or: [{ email: data.email }, { username: data.username }],
   });
   if (exists) throw createError(409, "Email hoặc username đã tồn tại");
 
-  const rawVerifyToken = createRandomToken();
+  const otp = createOtp();
   const user = await User.create({
     username: data.username,
     email: data.email,
     password: await hashPassword(data.password),
     role: "student",
-    verifyToken: hashToken(rawVerifyToken),
-    verifyTokenExpire: new Date(Date.now() + VERIFY_TOKEN_TTL),
+    authProvider: "local",
+    verifyToken: hashToken(otp),
+    verifyTokenExpire: new Date(Date.now() + VERIFY_OTP_TTL),
+    verifyOtpAttempts: 0,
+    verifyOtpLastSentAt: new Date(),
   });
 
-  const emailSent = await sendVerificationEmail(user, rawVerifyToken);
+  queueVerificationEmail(user, otp);
   return {
     user: publicUser(user),
-    emailSent,
-    verificationToken: devToken(rawVerifyToken),
+    emailQueued: true,
+    emailSent: true,
+    verificationOtp: devValue(otp),
+    verificationToken: devValue(otp),
   };
 }
 
-export async function verifyEmail(rawToken) {
-  const user = await User.findOne({
-    verifyToken: hashToken(rawToken),
-    verifyTokenExpire: { $gt: new Date() },
-  }).select("+verifyToken +verifyTokenExpire");
+export async function verifyEmail(rawOtp, email) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  const query = normalizedEmail
+    ? { email: normalizedEmail }
+    : { verifyToken: hashToken(rawOtp) };
+  const user = await User.findOne(query).select(
+    "+verifyToken +verifyTokenExpire +verifyOtpAttempts",
+  );
 
-  if (!user) throw createError(400, "Verification token không hợp lệ hoặc đã hết hạn");
+  if (!user || user.isVerified || !user.verifyToken) {
+    throw createError(400, "OTP không hợp lệ hoặc tài khoản đã được xác nhận");
+  }
+  if (!user.verifyTokenExpire || user.verifyTokenExpire <= new Date()) {
+    throw createError(400, "OTP đã hết hạn. Vui lòng yêu cầu mã mới");
+  }
+  if (user.verifyOtpAttempts >= VERIFY_OTP_MAX_ATTEMPTS) {
+    throw createError(429, "Bạn đã nhập sai quá nhiều lần. Vui lòng yêu cầu OTP mới");
+  }
+  if (user.verifyToken !== hashToken(rawOtp)) {
+    user.verifyOtpAttempts += 1;
+    await user.save();
+    throw createError(400, "OTP không đúng");
+  }
 
   user.isVerified = true;
   user.verifyToken = undefined;
   user.verifyTokenExpire = undefined;
+  user.verifyOtpAttempts = 0;
+  user.verifyOtpLastSentAt = undefined;
   await user.save();
   return publicUser(user);
 }
 
 export async function resendVerification(email) {
   const user = await User.findOne({ email }).select(
-    "+verifyToken +verifyTokenExpire",
+    "+verifyToken +verifyTokenExpire +verifyOtpLastSentAt",
   );
 
-  // Cùng một response cho email tồn tại/không tồn tại để tránh dò tài khoản.
   if (!user || user.isVerified) return {};
+  if (
+    user.verifyOtpLastSentAt &&
+    Date.now() - user.verifyOtpLastSentAt.getTime() < VERIFY_OTP_COOLDOWN
+  ) {
+    throw createError(429, "Vui lòng chờ 60 giây trước khi gửi lại OTP");
+  }
 
-  const rawVerifyToken = createRandomToken();
-  user.verifyToken = hashToken(rawVerifyToken);
-  user.verifyTokenExpire = new Date(Date.now() + VERIFY_TOKEN_TTL);
+  const otp = createOtp();
+  user.verifyToken = hashToken(otp);
+  user.verifyTokenExpire = new Date(Date.now() + VERIFY_OTP_TTL);
+  user.verifyOtpAttempts = 0;
+  user.verifyOtpLastSentAt = new Date();
   await user.save();
 
-  await sendVerificationEmail(user, rawVerifyToken);
-  return { verificationToken: devToken(rawVerifyToken) };
+  queueVerificationEmail(user, otp);
+  return {
+    emailQueued: true,
+    verificationOtp: devValue(otp),
+    verificationToken: devValue(otp),
+  };
 }
 
 export async function login(email, password) {
-  const user = await User.findOne({ email }).select("+password +refreshToken");
-  if (!user || !(await comparePassword(password, user.password))) {
+  const user = await User.findOne({ email })
+    .select("+password")
+    .lean();
+
+  if (!user?.password || !(await comparePassword(password, user.password))) {
     throw createError(401, "Email hoặc mật khẩu không đúng");
   }
   if (!user.isVerified) {
-    throw createError(403, "Tài khoản chưa được xác thực");
+    throw createError(403, "Tài khoản chưa được xác nhận bằng OTP");
   }
 
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
-  user.refreshToken = hashToken(refreshToken);
-  await user.save();
-  return { accessToken, refreshToken, user: publicUser(user) };
+  return issueSession(user);
+}
+
+export async function loginWithGoogle(credential) {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    throw createError(503, "Đăng nhập Google chưa được cấu hình");
+  }
+
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    payload = ticket.getPayload();
+  } catch {
+    throw createError(401, "Google credential không hợp lệ hoặc đã hết hạn");
+  }
+
+  if (!payload?.sub || !payload.email || !payload.email_verified) {
+    throw createError(401, "Google chưa xác minh địa chỉ email này");
+  }
+
+  const email = payload.email.toLowerCase();
+  let user = await User.findOne({
+    $or: [{ googleId: payload.sub }, { email }],
+  })
+    .select("+googleId")
+    .lean();
+
+  if (user) {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          googleId: payload.sub,
+          isVerified: true,
+          avatar: user.avatar || payload.picture || null,
+        },
+      },
+    );
+    user = {
+      ...user,
+      googleId: payload.sub,
+      isVerified: true,
+      avatar: user.avatar || payload.picture || null,
+    };
+  } else {
+    const created = await User.create({
+      username: await uniqueGoogleUsername(payload.name, email),
+      email,
+      googleId: payload.sub,
+      authProvider: "google",
+      isVerified: true,
+      avatar: payload.picture || null,
+      role: "student",
+    });
+    user = created.toObject();
+  }
+
+  return issueSession(user);
 }
 
 export async function rotateRefreshToken(rawRefreshToken) {
   const payload = verifyRefreshToken(rawRefreshToken);
   if (!payload?.id) throw createError(401, "Refresh token không hợp lệ");
 
-  const user = await User.findById(payload.id).select("+refreshToken");
-  if (!user || !user.refreshToken) {
+  const user = await User.findById(payload.id).select("+refreshToken").lean();
+  if (!user?.refreshToken) {
     throw createError(401, "Refresh token không hợp lệ");
   }
 
   if (user.refreshToken !== hashToken(rawRefreshToken)) {
-    user.refreshToken = null;
-    await user.save();
+    await User.updateOne({ _id: payload.id }, { $set: { refreshToken: null } });
     throw createError(401, "Refresh token đã bị thu hồi");
   }
 
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
-  user.refreshToken = hashToken(refreshToken);
-  await user.save();
-  return { accessToken, refreshToken };
+  const result = await issueSession(user);
+  return {
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+  };
 }
 
 export async function logout(rawRefreshToken) {
   if (!rawRefreshToken) return;
-
   const payload = verifyRefreshToken(rawRefreshToken);
   if (!payload?.id) return;
 
@@ -161,34 +306,33 @@ export async function logout(rawRefreshToken) {
 }
 
 export async function forgotPassword(email) {
-  const user = await User.findOne({ email }).select(
-    "+resetPasswordToken +resetPasswordExpire",
-  );
+  const user = await User.findOne({ email }).lean();
   if (!user) return {};
 
   const rawResetToken = createRandomToken();
-  user.resetPasswordToken = hashToken(rawResetToken);
-  user.resetPasswordExpire = new Date(Date.now() + RESET_TOKEN_TTL);
-  await user.save();
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: {
+        resetPasswordToken: hashToken(rawResetToken),
+        resetPasswordExpire: new Date(Date.now() + RESET_TOKEN_TTL),
+      },
+    },
+  );
 
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   const resetUrl = `${frontendUrl}/reset-password?token=${rawResetToken}`;
+  dispatchEmail(
+    () =>
+      sendEmail(
+        user.email,
+        "Đặt lại mật khẩu Northstar Learning",
+        `<p>Đặt lại mật khẩu tại <a href="${resetUrl}">${resetUrl}</a>. Link có hiệu lực trong 15 phút.</p>`,
+      ),
+    { type: "reset_password", userId: userId(user) },
+  );
 
-  try {
-    await sendEmail(
-      user.email,
-      "Đặt lại mật khẩu LMS",
-      `<p>Đặt lại mật khẩu tại <a href="${resetUrl}">${resetUrl}</a>. Link có hiệu lực trong 15 phút.</p>`,
-    );
-  } catch (error) {
-    logger.error({
-      event: "reset_password_email_failed",
-      userId: user.id,
-      message: error.message,
-    });
-  }
-
-  return { resetToken: devToken(rawResetToken) };
+  return { resetToken: devValue(rawResetToken) };
 }
 
 export async function resetPassword(rawToken, newPassword) {

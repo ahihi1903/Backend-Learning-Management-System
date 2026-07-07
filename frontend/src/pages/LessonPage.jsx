@@ -4,6 +4,7 @@ import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { ErrorState, LoadingState, Notice } from "../components/States.jsx";
 import { CloseIcon, MenuIcon } from "../components/Icons.jsx";
+import VideoPlayer from "../components/media/VideoPlayer.jsx";
 
 export default function LessonPage() {
   const { courseId, lessonId } = useParams();
@@ -176,7 +177,14 @@ export default function LessonPage() {
 
         {activeTab === "lesson" && (
           <article className="lesson-article" id="lesson-panel-lesson" role="tabpanel">
-            {lesson.videoUrl && <a className="video-card" href={lesson.videoUrl} target="_blank" rel="noreferrer"><span>▶</span><div><strong>Mở video bài học</strong><small>{lesson.videoUrl}</small></div></a>}
+            {(lesson.videoUrl || lesson.video?.playbackUrl) && (
+              <VideoPlayer
+                lesson={lesson}
+                courseId={courseId}
+                canTrack={user.role === "student"}
+                initialPosition={currentProgress?.lastPositionSeconds || 0}
+              />
+            )}
             <div className="lesson-copy">{lesson.content || "Nội dung bài học đang được giảng viên cập nhật."}</div>
             <div className="lesson-pager">
               {lessons[currentIndex - 1] ? <Link to={`/learn/${courseId}/lessons/${lessons[currentIndex - 1]._id}`}>← Bài trước</Link> : <span />}

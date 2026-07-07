@@ -35,12 +35,30 @@ async function send(path, options = {}) {
     body = JSON.stringify(body);
   }
 
-  return fetch(`${API_PREFIX}${path}`, {
-    ...options,
-    headers,
-    body,
-    credentials: "include",
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 20_000);
+
+  try {
+    return await fetch(`${API_PREFIX}${path}`, {
+      ...options,
+      headers,
+      body,
+      credentials: "include",
+      signal: options.signal || controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new ApiError(408, {
+        message: "Backend phản hồi quá lâu. Vui lòng thử lại.",
+      });
+    }
+    throw new ApiError(0, {
+      message:
+        "Không thể kết nối tới backend. Hãy kiểm tra URL API, CORS và trạng thái server.",
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 async function parse(response) {

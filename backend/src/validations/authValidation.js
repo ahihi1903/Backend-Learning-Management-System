@@ -25,6 +25,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Mật khẩu là bắt buộc"),
 });
 
+export const googleLoginSchema = z.object({
+  credential: z.string().min(100, "Google credential không hợp lệ"),
+});
+
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1).optional(),
 });
@@ -33,9 +37,20 @@ export const emailSchemaBody = z.object({
   email: emailSchema,
 });
 
-export const verifyEmailSchema = z.object({
-  token: z.string().min(1, "Verification token là bắt buộc"),
-});
+export const verifyEmailSchema = z
+  .object({
+    email: emailSchema.optional(),
+    otp: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "OTP phải gồm đúng 6 chữ số")
+      .optional(),
+    token: z.string().trim().min(1).optional(),
+  })
+  .refine((data) => data.otp || data.token, {
+    message: "OTP là bắt buộc",
+    path: ["otp"],
+  });
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, "Reset token là bắt buộc"),
