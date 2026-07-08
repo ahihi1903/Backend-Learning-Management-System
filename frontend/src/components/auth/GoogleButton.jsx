@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 const SCRIPT_ID = "google-identity-services";
 
 function loadGoogleIdentity() {
-  if (window.google?.accounts?.id) return Promise.resolve();
+  if (window.google?.accounts?.id || window.google?.accounts?.oauth2) {
+    return Promise.resolve();
+  }
   return new Promise((resolve, reject) => {
     const existing = document.getElementById(SCRIPT_ID);
     if (existing) {
@@ -19,6 +21,43 @@ function loadGoogleIdentity() {
     script.onload = resolve;
     script.onerror = () => reject(new Error("Không thể tải Google Sign-In"));
     document.head.appendChild(script);
+  });
+}
+
+export async function requestGoogleAuthCode(clientId) {
+  if (!clientId) {
+    throw new Error("Chưa cấu hình VITE_GOOGLE_CLIENT_ID.");
+  }
+
+  await loadGoogleIdentity();
+
+  return new Promise((resolve, reject) => {
+    if (!window.google?.accounts?.oauth2) {
+      reject(new Error("Không thể tải Google OAuth."));
+      return;
+    }
+
+    const client = window.google.accounts.oauth2.initCodeClient({
+      client_id: clientId,
+      scope: "openid email profile",
+      ux_mode: "popup",
+      callback: (response) => {
+        if (response.error) {
+          reject(new Error(response.error_description || response.error));
+          return;
+        }
+        if (!response.code) {
+          reject(new Error("Google không trả về authorization code."));
+          return;
+        }
+        resolve(response.code);
+      },
+      error_callback: (error) => {
+        reject(new Error(error?.message || "Không thể mở Google OAuth popup."));
+      },
+    });
+
+    client.requestCode();
   });
 }
 

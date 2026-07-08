@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { Notice } from "../components/States.jsx";
 import { Button, FormField, PasswordField } from "../components/ui/Controls.jsx";
 import SocialLoginOptions from "../components/auth/SocialLoginOptions.jsx";
-import { requestGoogleCredential } from "../components/auth/GoogleButton.jsx";
+import { requestGoogleAuthCode } from "../components/auth/GoogleButton.jsx";
 import AuthShell from "../components/auth/AuthShell.jsx";
 
 export default function RegisterPage() {
@@ -41,8 +41,8 @@ export default function RegisterPage() {
     setError("");
     setSubmitting(true);
     try {
-      const credential = await requestGoogleCredential(googleClientId);
-      await loginWithGoogle(credential);
+      const code = await requestGoogleAuthCode(googleClientId);
+      await loginWithGoogle({ code });
       navigate("/", { replace: true });
     } catch (requestError) {
       setError(requestError.message);

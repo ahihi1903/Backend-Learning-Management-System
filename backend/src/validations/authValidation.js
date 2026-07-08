@@ -25,9 +25,15 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Mật khẩu là bắt buộc"),
 });
 
-export const googleLoginSchema = z.object({
-  credential: z.string().min(100, "Google credential không hợp lệ"),
-});
+export const googleLoginSchema = z
+  .object({
+    credential: z.string().min(100, "Google credential không hợp lệ").optional(),
+    code: z.string().min(20, "Google authorization code không hợp lệ").optional(),
+  })
+  .refine((data) => data.credential || data.code, {
+    message: "Google credential hoặc authorization code là bắt buộc",
+    path: ["credential"],
+  });
 
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1).optional(),

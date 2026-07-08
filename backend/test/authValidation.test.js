@@ -60,7 +60,15 @@ test("google login requires a credential", () => {
     false,
   );
   assert.equal(
+    googleLoginSchema.safeParse({ code: "short-code" }).success,
+    false,
+  );
+  assert.equal(
     googleLoginSchema.safeParse({ credential: "x".repeat(100) }).success,
+    true,
+  );
+  assert.equal(
+    googleLoginSchema.safeParse({ code: "4/".padEnd(80, "x") }).success,
     true,
   );
 });

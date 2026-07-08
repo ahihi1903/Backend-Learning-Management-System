@@ -53,7 +53,7 @@ export async function login(req, res) {
 }
 
 export async function googleLogin(req, res) {
-  const result = await authService.loginWithGoogle(req.body.credential);
+  const result = await authService.loginWithGoogle(req.body);
   setSessionCookie(res, result.refreshToken);
   res.json({ accessToken: result.accessToken, user: result.user });
 }

@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { Notice } from "../components/States.jsx";
 import { Button, FormField, PasswordField } from "../components/ui/Controls.jsx";
 import SocialLoginOptions from "../components/auth/SocialLoginOptions.jsx";
-import { requestGoogleCredential } from "../components/auth/GoogleButton.jsx";
+import { requestGoogleAuthCode } from "../components/auth/GoogleButton.jsx";
 import AuthShell from "../components/auth/AuthShell.jsx";
 
 export default function LoginPage() {
@@ -46,8 +46,8 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const credential = await requestGoogleCredential(googleClientId);
-      finishLogin(await loginWithGoogle(credential));
+      const code = await requestGoogleAuthCode(googleClientId);
+      finishLogin(await loginWithGoogle({ code }));
     } catch (requestError) {
       setError(requestError.message);
     } finally {

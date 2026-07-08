@@ -52,10 +52,12 @@ export function AuthProvider({ children }) {
     return result.user;
   }
 
-  async function loginWithGoogle(credential) {
+  async function loginWithGoogle(googleAuth) {
+    const body =
+      typeof googleAuth === "string" ? { credential: googleAuth } : googleAuth;
     const result = await api("/auth/google", {
       method: "POST",
-      body: { credential },
+      body,
     });
     setAccessToken(result.accessToken);
     setUser(normalizeUser(result.user));

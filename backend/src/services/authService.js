@@ -18,6 +18,14 @@ const VERIFY_TOKEN_MAX_ATTEMPTS = 5;
 const RESET_TOKEN_TTL = 15 * 60 * 1000;
 const googleClient = new OAuth2Client();
 
+function googleCodeClient() {
+  return new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    "postmessage",
+  );
+}
+
 function createRandomToken() {
   return crypto.randomBytes(32).toString("hex");
 }
@@ -307,12 +315,40 @@ export async function login(email, password) {
   return issueSession(user);
 }
 
-export async function loginWithGoogle(credential) {
+async function googlePayloadFromCode(code) {
+  if (!process.env.GOOGLE_CLIENT_SECRET) {
+    throw createError(
+      503,
+      "Đăng nhập Google chưa được cấu hình đầy đủ. Thiếu GOOGLE_CLIENT_SECRET",
+      { expose: true },
+    );
+  }
+
+  try {
+    const client = googleCodeClient();
+    const { tokens } = await client.getToken(code);
+    if (!tokens.id_token) throw new Error("Google không trả về id_token");
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    return ticket.getPayload();
+  } catch {
+    throw createError(401, "Google authorization code không hợp lệ hoặc đã hết hạn");
+  }
+}
+
+export async function loginWithGoogle(input) {
   if (!process.env.GOOGLE_CLIENT_ID) {
     throw createError(503, "Đăng nhập Google chưa được cấu hình");
   }
 
+  const credential = typeof input === "string" ? input : input?.credential;
+  const code = typeof input === "object" ? input?.code : undefined;
   let payload;
+  if (code) {
+    payload = await googlePayloadFromCode(code);
+  } else {
   try {
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
@@ -321,6 +357,8 @@ export async function loginWithGoogle(credential) {
     payload = ticket.getPayload();
   } catch {
     throw createError(401, "Google credential không hợp lệ hoặc đã hết hạn");
+  }
+
   }
 
   if (!payload?.sub || !payload.email || !payload.email_verified) {
