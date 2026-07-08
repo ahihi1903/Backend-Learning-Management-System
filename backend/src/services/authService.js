@@ -12,18 +12,14 @@ import {
 import { sendEmail } from "../utils/sendEmail.js";
 import logger from "../utils/logger.js";
 
-const VERIFY_OTP_TTL = 10 * 60 * 1000;
-const VERIFY_OTP_COOLDOWN = 60 * 1000;
-const VERIFY_OTP_MAX_ATTEMPTS = 5;
+const VERIFY_TOKEN_TTL = 24 * 60 * 60 * 1000;
+const VERIFY_TOKEN_COOLDOWN = 60 * 1000;
+const VERIFY_TOKEN_MAX_ATTEMPTS = 5;
 const RESET_TOKEN_TTL = 15 * 60 * 1000;
 const googleClient = new OAuth2Client();
 
 function createRandomToken() {
   return crypto.randomBytes(32).toString("hex");
-}
-
-function createOtp() {
-  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
 function userId(user) {
@@ -55,6 +51,18 @@ function devValue(value) {
   return process.env.NODE_ENV === "production" ? undefined : value;
 }
 
+function frontendUrl() {
+  return (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
+}
+
+function verificationLink(user, rawToken) {
+  const params = new URLSearchParams({
+    token: rawToken,
+    email: user.email,
+  });
+  return `${frontendUrl()}/verify-email?${params.toString()}`;
+}
+
 function logEmailFailure(error, context) {
   logger.error({
     event: "email_send_failed",
@@ -73,34 +81,54 @@ function emailUnavailableError(message = "Không thể gửi email. Vui lòng th
   return createError(503, message, { expose: true });
 }
 
-async function sendVerificationEmail(user, otp) {
-  await sendEmail(
-    user.email,
-    `${otp} là mã xác nhận Northstar Learning`,
-    `
-      <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#18181b">
-        <p>Xin chào ${user.username},</p>
-        <h2 style="margin-bottom:8px">Xác nhận tài khoản Northstar</h2>
-        <p>Nhập mã OTP dưới đây để hoàn tất đăng ký:</p>
-        <div style="font-size:32px;font-weight:800;letter-spacing:10px;padding:18px 22px;background:#f4f4f5;border-radius:14px;text-align:center">${otp}</div>
-        <p style="color:#71717a">Mã có hiệu lực trong 10 phút. Không chia sẻ mã này cho bất kỳ ai.</p>
-      </div>
-    `,
-  );
+function verificationEmailHtml(user, link) {
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#18181b">
+      <p>Xin chào ${user.username},</p>
+      <h2 style="margin-bottom:8px">Xác minh tài khoản Northstar</h2>
+      <p>Bấm nút bên dưới để hoàn tất đăng ký. Liên kết có hiệu lực trong 24 giờ.</p>
+      <p style="margin:28px 0">
+        <a href="${link}" style="display:inline-block;background:#10b981;color:white;text-decoration:none;font-weight:700;padding:14px 22px;border-radius:12px">
+          Xác minh tài khoản
+        </a>
+      </p>
+      <p style="color:#71717a">Nếu nút không hoạt động, hãy sao chép liên kết này vào trình duyệt:</p>
+      <p style="word-break:break-all;color:#2563eb">${link}</p>
+      <p style="color:#71717a">Nếu bạn không tạo tài khoản này, hãy bỏ qua email.</p>
+    </div>
+  `;
 }
 
-async function deliverVerificationEmail(user, otp) {
+async function sendVerificationEmail(user, rawToken) {
+  const link = verificationLink(user, rawToken);
+  await sendEmail(
+    user.email,
+    "Xác minh tài khoản Northstar Learning",
+    verificationEmailHtml(user, link),
+  );
+  return link;
+}
+
+function verificationConfigMessage(error) {
+  if (error.provider === "brevo" && error.status === 401) {
+    return "Dịch vụ email chưa được cấu hình đúng. Vui lòng kiểm tra Brevo API key.";
+  }
+  if (error.provider === "brevo" && [400, 401, 403].includes(error.status)) {
+    return "Dịch vụ email chưa chấp nhận người gửi. Vui lòng kiểm tra sender trong Brevo.";
+  }
+  return "Không thể gửi email xác minh. Vui lòng thử lại sau.";
+}
+
+async function deliverVerificationEmail(user, rawToken) {
   try {
-    await sendVerificationEmail(user, otp);
+    return await sendVerificationEmail(user, rawToken);
   } catch (error) {
     logEmailFailure(error, {
       type: "verification",
       userId: userId(user),
       to: user.email,
     });
-    throw emailUnavailableError(
-      "Không thể gửi OTP tới email này. Vui lòng kiểm tra email hoặc thử lại sau",
-    );
+    throw emailUnavailableError(verificationConfigMessage(error));
   }
 }
 
@@ -154,21 +182,22 @@ export async function register(data) {
   });
   if (exists) throw createError(409, "Email hoặc username đã tồn tại");
 
-  const otp = createOtp();
+  const rawVerificationToken = createRandomToken();
   const user = await User.create({
     username: data.username,
     email: data.email,
     password: await hashPassword(data.password),
     role: "student",
     authProvider: "local",
-    verifyToken: hashToken(otp),
-    verifyTokenExpire: new Date(Date.now() + VERIFY_OTP_TTL),
+    verifyToken: hashToken(rawVerificationToken),
+    verifyTokenExpire: new Date(Date.now() + VERIFY_TOKEN_TTL),
     verifyOtpAttempts: 0,
     verifyOtpLastSentAt: new Date(),
   });
 
+  let link;
   try {
-    await deliverVerificationEmail(user, otp);
+    link = await deliverVerificationEmail(user, rawVerificationToken);
   } catch (error) {
     await User.deleteOne({ _id: user._id, isVerified: false });
     throw error;
@@ -178,33 +207,33 @@ export async function register(data) {
     user: publicUser(user),
     emailQueued: true,
     emailSent: true,
-    verificationOtp: devValue(otp),
-    verificationToken: devValue(otp),
+    verificationToken: devValue(rawVerificationToken),
+    verificationLink: devValue(link),
   };
 }
 
-export async function verifyEmail(rawOtp, email) {
+export async function verifyEmail(rawToken, email) {
   const normalizedEmail = email?.trim().toLowerCase();
   const query = normalizedEmail
     ? { email: normalizedEmail }
-    : { verifyToken: hashToken(rawOtp) };
+    : { verifyToken: hashToken(rawToken) };
   const user = await User.findOne(query).select(
     "+verifyToken +verifyTokenExpire +verifyOtpAttempts",
   );
 
   if (!user || user.isVerified || !user.verifyToken) {
-    throw createError(400, "OTP không hợp lệ hoặc tài khoản đã được xác nhận");
+    throw createError(400, "Liên kết xác minh không hợp lệ hoặc tài khoản đã được xác minh");
   }
   if (!user.verifyTokenExpire || user.verifyTokenExpire <= new Date()) {
-    throw createError(400, "OTP đã hết hạn. Vui lòng yêu cầu mã mới");
+    throw createError(400, "Liên kết xác minh đã hết hạn. Vui lòng yêu cầu link mới");
   }
-  if (user.verifyOtpAttempts >= VERIFY_OTP_MAX_ATTEMPTS) {
-    throw createError(429, "Bạn đã nhập sai quá nhiều lần. Vui lòng yêu cầu OTP mới");
+  if (user.verifyOtpAttempts >= VERIFY_TOKEN_MAX_ATTEMPTS) {
+    throw createError(429, "Bạn đã thử sai quá nhiều lần. Vui lòng yêu cầu link mới");
   }
-  if (user.verifyToken !== hashToken(rawOtp)) {
+  if (user.verifyToken !== hashToken(rawToken)) {
     user.verifyOtpAttempts += 1;
     await user.save();
-    throw createError(400, "OTP không đúng");
+    throw createError(400, "Liên kết xác minh không đúng");
   }
 
   user.isVerified = true;
@@ -224,9 +253,9 @@ export async function resendVerification(email) {
   if (!user || user.isVerified) return {};
   if (
     user.verifyOtpLastSentAt &&
-    Date.now() - user.verifyOtpLastSentAt.getTime() < VERIFY_OTP_COOLDOWN
+    Date.now() - user.verifyOtpLastSentAt.getTime() < VERIFY_TOKEN_COOLDOWN
   ) {
-    throw createError(429, "Vui lòng chờ 60 giây trước khi gửi lại OTP");
+    throw createError(429, "Vui lòng chờ 60 giây trước khi gửi lại link xác minh");
   }
 
   const previousVerification = {
@@ -236,15 +265,16 @@ export async function resendVerification(email) {
     verifyOtpLastSentAt: user.verifyOtpLastSentAt,
   };
 
-  const otp = createOtp();
-  user.verifyToken = hashToken(otp);
-  user.verifyTokenExpire = new Date(Date.now() + VERIFY_OTP_TTL);
+  const rawVerificationToken = createRandomToken();
+  user.verifyToken = hashToken(rawVerificationToken);
+  user.verifyTokenExpire = new Date(Date.now() + VERIFY_TOKEN_TTL);
   user.verifyOtpAttempts = 0;
   user.verifyOtpLastSentAt = new Date();
   await user.save();
 
+  let link;
   try {
-    await deliverVerificationEmail(user, otp);
+    link = await deliverVerificationEmail(user, rawVerificationToken);
   } catch (error) {
     user.verifyToken = previousVerification.verifyToken;
     user.verifyTokenExpire = previousVerification.verifyTokenExpire;
@@ -257,8 +287,8 @@ export async function resendVerification(email) {
   return {
     emailQueued: true,
     emailSent: true,
-    verificationOtp: devValue(otp),
-    verificationToken: devValue(otp),
+    verificationToken: devValue(rawVerificationToken),
+    verificationLink: devValue(link),
   };
 }
 
@@ -271,7 +301,7 @@ export async function login(email, password) {
     throw createError(401, "Email hoặc mật khẩu không đúng");
   }
   if (!user.isVerified) {
-    throw createError(403, "Tài khoản chưa được xác nhận bằng OTP");
+    throw createError(403, "Tài khoản chưa được xác minh qua email");
   }
 
   return issueSession(user);
@@ -384,8 +414,7 @@ export async function forgotPassword(email) {
     },
   );
 
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  const resetUrl = `${frontendUrl}/reset-password?token=${rawResetToken}`;
+  const resetUrl = `${frontendUrl()}/reset-password?token=${rawResetToken}`;
 
   try {
     await deliverResetPasswordEmail(user, resetUrl);

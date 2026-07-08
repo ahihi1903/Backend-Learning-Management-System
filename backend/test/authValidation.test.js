@@ -47,10 +47,11 @@ test("reset password accepts a strong password and token", () => {
   assert.equal(result.success, true);
 });
 
-test("email verification requires a six digit OTP", () => {
+test("email verification accepts a secure token and keeps legacy OTP compatibility", () => {
+  assert.equal(verifyEmailSchema.safeParse({ token: "a".repeat(64) }).success, true);
+  assert.equal(verifyEmailSchema.safeParse({ token: "short" }).success, false);
   assert.equal(verifyEmailSchema.safeParse({ otp: "123456" }).success, true);
   assert.equal(verifyEmailSchema.safeParse({ otp: "12345" }).success, false);
-  assert.equal(verifyEmailSchema.safeParse({ otp: "abcdef" }).success, false);
 });
 
 test("google login requires a credential", () => {

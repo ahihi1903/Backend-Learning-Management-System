@@ -16,9 +16,19 @@ import { hashPassword } from "../src/utils/hash.js";
 
 const integrationTest = process.env.TEST_MONGO_URI ? test : test.skip;
 
-integrationTest("complete LMS flow and cascade integrity", async () => {
+integrationTest("complete LMS flow and cascade integrity", async (t) => {
   let server;
-  await mongoose.connect(process.env.TEST_MONGO_URI);
+  try {
+    await mongoose.connect(process.env.TEST_MONGO_URI, {
+      serverSelectionTimeoutMS: 2_000,
+    });
+  } catch (error) {
+    if (error.name === "MongooseServerSelectionError") {
+      t.skip(`Mongo test database is not available: ${error.message}`);
+      return;
+    }
+    throw error;
+  }
 
   if (!mongoose.connection.name.endsWith("_test")) {
     await mongoose.disconnect();

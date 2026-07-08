@@ -40,16 +40,17 @@ export const emailSchemaBody = z.object({
 export const verifyEmailSchema = z
   .object({
     email: emailSchema.optional(),
+    token: z.string().trim().min(20, "Token xác minh không hợp lệ").optional(),
+    // Giữ otp để tương thích tài khoản cũ nếu database còn token 6 số đã hash.
     otp: z
       .string()
       .trim()
       .regex(/^\d{6}$/, "OTP phải gồm đúng 6 chữ số")
       .optional(),
-    token: z.string().trim().min(1).optional(),
   })
-  .refine((data) => data.otp || data.token, {
-    message: "OTP là bắt buộc",
-    path: ["otp"],
+  .refine((data) => data.token || data.otp, {
+    message: "Token xác minh là bắt buộc",
+    path: ["token"],
   });
 
 export const resetPasswordSchema = z.object({

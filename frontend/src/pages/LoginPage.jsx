@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Notice } from "../components/States.jsx";
 import { Button, FormField, PasswordField } from "../components/ui/Controls.jsx";
-import GoogleButton from "../components/auth/GoogleButton.jsx";
+import SocialLoginOptions from "../components/auth/SocialLoginOptions.jsx";
+import { requestGoogleCredential } from "../components/auth/GoogleButton.jsx";
 import AuthShell from "../components/auth/AuthShell.jsx";
 
 export default function LoginPage() {
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   const finishLogin = useCallback(
     (user) => {
@@ -40,20 +42,18 @@ export default function LoginPage() {
     }
   }
 
-  const handleGoogle = useCallback(
-    async (credential) => {
-      setError("");
-      setSubmitting(true);
-      try {
-        finishLogin(await loginWithGoogle(credential));
-      } catch (requestError) {
-        setError(requestError.message);
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [finishLogin, loginWithGoogle],
-  );
+  const handleGoogle = useCallback(async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      const credential = await requestGoogleCredential(googleClientId);
+      finishLogin(await loginWithGoogle(credential));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [finishLogin, googleClientId, loginWithGoogle]);
 
   return (
     <AuthShell
@@ -78,18 +78,11 @@ export default function LoginPage() {
           Rất vui được gặp lại bạn
         </h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-          Dùng email hoặc tiếp tục nhanh với tài khoản Google.
+          Dùng email hoặc tiếp tục nhanh bằng tài khoản mạng xã hội.
         </p>
       </div>
 
       <Notice type="error">{error}</Notice>
-      <GoogleButton onCredential={handleGoogle} disabled={submitting} />
-
-      <div className="my-6 flex items-center gap-4 text-xs font-medium uppercase tracking-widest text-zinc-400">
-        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-        hoặc dùng email
-        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-      </div>
 
       <form onSubmit={handleSubmit} className="grid gap-5">
         <FormField
@@ -113,6 +106,13 @@ export default function LoginPage() {
           {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
         </Button>
       </form>
+
+      <SocialLoginOptions
+        action="Đăng nhập"
+        onGoogle={handleGoogle}
+        disabled={submitting}
+        googleDisabled={!googleClientId}
+      />
     </AuthShell>
   );
 }

@@ -22,6 +22,51 @@ function loadGoogleIdentity() {
   });
 }
 
+export async function requestGoogleCredential(clientId) {
+  if (!clientId) {
+    throw new Error("Chưa cấu hình VITE_GOOGLE_CLIENT_ID.");
+  }
+
+  await loadGoogleIdentity();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+
+    const timeout = window.setTimeout(() => {
+      finish(reject, new Error("Google Sign-In phản hồi quá lâu. Vui lòng thử lại."));
+    }, 60_000);
+
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: ({ credential }) => {
+        window.clearTimeout(timeout);
+        if (credential) finish(resolve, credential);
+        else finish(reject, new Error("Google không trả về credential hợp lệ."));
+      },
+      cancel_on_tap_outside: true,
+    });
+
+    window.google.accounts.id.prompt((notification) => {
+      if (
+        notification.isNotDisplayed?.() ||
+        notification.isSkippedMoment?.() ||
+        notification.isDismissedMoment?.()
+      ) {
+        window.clearTimeout(timeout);
+        finish(
+          reject,
+          new Error("Không thể mở Google Sign-In. Vui lòng thử lại hoặc dùng email."),
+        );
+      }
+    });
+  });
+}
+
 export default function GoogleButton({ onCredential, disabled = false }) {
   const containerRef = useRef(null);
   const callbackRef = useRef(onCredential);

@@ -4,7 +4,8 @@ import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Notice } from "../components/States.jsx";
 import { Button, FormField, PasswordField } from "../components/ui/Controls.jsx";
-import GoogleButton from "../components/auth/GoogleButton.jsx";
+import SocialLoginOptions from "../components/auth/SocialLoginOptions.jsx";
+import { requestGoogleCredential } from "../components/auth/GoogleButton.jsx";
 import AuthShell from "../components/auth/AuthShell.jsx";
 
 export default function RegisterPage() {
@@ -13,6 +14,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -23,7 +25,8 @@ export default function RegisterPage() {
       navigate("/verify-email", {
         state: {
           email: form.email,
-          otp: result.verificationOtp || result.verificationToken,
+          token: result.verificationToken,
+          verificationLink: result.verificationLink,
           emailQueued: result.emailQueued,
         },
       });
@@ -34,21 +37,19 @@ export default function RegisterPage() {
     }
   }
 
-  const handleGoogle = useCallback(
-    async (credential) => {
-      setError("");
-      setSubmitting(true);
-      try {
-        await loginWithGoogle(credential);
-        navigate("/", { replace: true });
-      } catch (requestError) {
-        setError(requestError.message);
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [loginWithGoogle, navigate],
-  );
+  const handleGoogle = useCallback(async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      const credential = await requestGoogleCredential(googleClientId);
+      await loginWithGoogle(credential);
+      navigate("/", { replace: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [googleClientId, loginWithGoogle, navigate]);
 
   return (
     <AuthShell
@@ -73,18 +74,11 @@ export default function RegisterPage() {
           Khởi động hành trình mới
         </h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-          Đăng ký bằng Google hoặc email. Tài khoản email sẽ được xác nhận bằng OTP.
+          Đăng ký bằng email, sau đó bấm link xác minh được gửi tới hộp thư.
         </p>
       </div>
 
       <Notice type="error">{error}</Notice>
-      <GoogleButton onCredential={handleGoogle} disabled={submitting} />
-
-      <div className="my-6 flex items-center gap-4 text-xs font-medium uppercase tracking-widest text-zinc-400">
-        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-        hoặc dùng email
-        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-      </div>
 
       <form onSubmit={handleSubmit} className="grid gap-5">
         <FormField
@@ -120,6 +114,13 @@ export default function RegisterPage() {
           {submitting ? "Đang tạo tài khoản..." : "Tạo tài khoản"}
         </Button>
       </form>
+
+      <SocialLoginOptions
+        action="Đăng ký"
+        onGoogle={handleGoogle}
+        disabled={submitting}
+        googleDisabled={!googleClientId}
+      />
     </AuthShell>
   );
 }

@@ -24,24 +24,24 @@ function setSessionCookie(res, refreshToken) {
 export async function register(req, res) {
   const result = await authService.register(req.body);
   res.status(201).json({
-    message: "Đăng ký thành công. OTP đang được gửi tới email của bạn.",
+    message: "Đăng ký thành công. Link xác minh đang được gửi tới email của bạn.",
     ...result,
   });
 }
 
 export async function verifyEmail(req, res) {
   const user = await authService.verifyEmail(
-    req.body.otp || req.body.token,
+    req.body.token || req.body.otp,
     req.body.email,
   );
-  res.json({ message: "Xác nhận email thành công", user });
+  res.json({ message: "Xác minh email thành công", user });
 }
 
 export async function resendVerification(req, res) {
   const result = await authService.resendVerification(req.body.email);
   res.json({
     message:
-      "Nếu tài khoản tồn tại và chưa xác nhận, một OTP mới đang được gửi.",
+      "Nếu tài khoản tồn tại và chưa xác minh, một link mới đang được gửi.",
     ...result,
   });
 }
